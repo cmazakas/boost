@@ -818,3 +818,9 @@
 	url = ../cobalt.git
 	fetchRecurseSubmodules = on-demand
 	branch = .
+[submodule "libs/buffers"]
+	path = libs/buffers
+	url = https://github.com/cppalliance/buffers.git
+[submodule "libs/http_proto"]
+	path = libs/http_proto
+	url = https://github.com/cppalliance/http_proto.git
