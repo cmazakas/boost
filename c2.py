@@ -1,18 +1,25 @@
 #!/usr/bin/python3
 
+# pylint: disable=global-statement
+
 """Python-based version of b2 using pure CMake"""
 
 import os
+import shutil
 import subprocess
 import dataclasses
 import argparse
 
 num_cores = os.cpu_count()
 
-command_mode: str | None = None
-cmake_generator: str | None = None
-num_jobs: int | None = None
-library: str | None = None
+BUILD_ROOT = "build_c2py"
+COMMAND_MODE: str | None = None
+CMAKE_GENERATOR: str | None = None
+NUM_JOBS: int | None = None
+LIBRARY: str | None = None
+UBSAN: bool | None = None
+ASAN: bool | None = None
+NO_CONFIGURE: bool | None = None
 
 @dataclasses.dataclass
 class BuildVariant:
@@ -22,11 +29,14 @@ class BuildVariant:
     toolset: str | None = None
     variant: str | None = None
     cxxstd: str | None = None
+    link: str | None = None
+    asan: bool | None = None
+    ubsan: bool | None = None
 
-def build_variant_to_build_dir(build_variant: BuildVariant):
-    """Translates a build variant object into a named build directory to invoke CMake in"""
+def build_variant_to_build_dir_fragment(build_variant: BuildVariant):
+    """A detail function intended to build the tree fragment"""
 
-    build_dir = f"build_{library}"
+    build_dir = f"build_{LIBRARY}"
     if build_variant.toolset is not None:
         build_dir += f"_{build_variant.toolset}"
 
@@ -34,16 +44,25 @@ def build_variant_to_build_dir(build_variant: BuildVariant):
         build_dir += f"_std{build_variant.cxxstd}"
 
     if build_variant.variant is not None:
-        build_dir += f"_{build_variant.variant}"
+        if build_variant.variant == 'release':
+            build_dir += f"_{build_variant.variant}"
 
     addr = build_variant.address_model
     if addr is not None:
         if addr == '32':
             build_dir += "_x86"
-        elif addr == '64':
-            build_dir += "_x64"
 
-    return os.path.join("build_c2py", build_dir)
+    if build_variant.link is not None:
+        build_dir += f"_{build_variant.link}"
+
+    return build_dir
+
+
+def build_variant_to_build_dir(build_variant: BuildVariant):
+    """Translates a build variant object into a named build directory to invoke CMake in"""
+
+    fragment = build_variant_to_build_dir_fragment(build_variant)
+    return os.path.join(BUILD_ROOT, fragment)
 
 def toolset_to_cxx_compiler(toolset):
     """Used to map toolsetes to something CMake can understand"""
@@ -71,16 +90,16 @@ def build_variant_to_cmake_configure_args(build_variant: BuildVariant, build_dir
     """Programmatically generate the proper arguments to pass to CMake's configure phase"""
 
     config_args = [
-        "cmake",
+        shutil.which("cmake"),
         "-S", ".",
         "-B", build_dir,
         "-DBUILD_TESTING=ON",
-        f"-DBOOST_INCLUDE_LIBRARIES={library}",
+        f"-DBOOST_INCLUDE_LIBRARIES={LIBRARY}",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        "-DCMAKE_CXX_VISIBILITY_PRESET=hidden",
+        "-DCMAKE_VISIBILITY_INLINES_HIDDEN=ON",
+        "-G", "Unix Makefiles",
     ]
-
-    if cmake_generator:
-        config_args += ["-G", cmake_generator]
 
     if build_variant.toolset is not None:
         cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
@@ -90,16 +109,33 @@ def build_variant_to_cmake_configure_args(build_variant: BuildVariant, build_dir
     if build_variant.variant is not None:
         build_type = variant_to_build_type(build_variant.variant)
         config_args.append(f"-DCMAKE_BUILD_TYPE={build_type}")
+    else:
+        config_args.append("-DCMAKE_BUILD_TYPE=Debug")
 
     if build_variant.cxxstd is not None:
         cxxstd = build_variant.cxxstd
         config_args.append(f"-DCMAKE_CXX_STANDARD={cxxstd}")
 
+    if build_variant.link == 'shared':
+        config_args.append("-DBUILD_SHARED_LIBS=ON")
+    elif build_variant.link == 'static':
+        config_args.append("-DBUILD_SHARED_LIBS=OFF")
+
+    cxxflags = []
     if build_variant.address_model == '32':
-        config_args.append("-DCMAKE_CXX_FLAGS_INIT=\"-m32\"")
+        cxxflags.append('-m32')
+
+    if ASAN:
+        cxxflags.append('-fsanitize=address')
+
+    if UBSAN:
+        cxxflags.append('-fsanitize=undefined')
+
+    if len(cxxflags) > 0:
+        init_flags = ' '.join(cxxflags)
+        config_args.append(f"-DCMAKE_CXX_FLAGS_INIT='{init_flags}'")
 
     return config_args
-
 
 def build_variant_to_cmake_build_args(build_variant: BuildVariant, build_dir: str):
     """Programmatically generate the proper arguments to pass to CMake's build phase"""
@@ -110,8 +146,8 @@ def build_variant_to_cmake_build_args(build_variant: BuildVariant, build_dir: st
         "--target", "tests",
     ]
 
-    if num_jobs:
-        build_args.append(f"-j{num_jobs}")
+    if NUM_JOBS:
+        build_args.append(f"-j{NUM_JOBS}")
 
     if build_variant.variant is not None:
         build_type = variant_to_build_type(build_variant.variant)
@@ -119,22 +155,19 @@ def build_variant_to_cmake_build_args(build_variant: BuildVariant, build_dir: st
 
     return build_args
 
-def build_boost(build_variant: BuildVariant):
+def configure_boost(build_variant: BuildVariant):
     """"Build a specific Boost configuration"""
 
     build_dir = build_variant_to_build_dir(build_variant)
 
-    print("configuring Boost")
-    config_args = build_variant_to_cmake_configure_args(build_variant, build_dir)
-    subprocess.run(config_args, check=True)
+    if NO_CONFIGURE:
+        print("skipping Boost configuration")
+    else:
+        print("configuring Boost")
+        config_args = build_variant_to_cmake_configure_args(build_variant, build_dir)
+        print(' '.join(config_args))
+        subprocess.run(config_args, check=True)
 
-
-    print("building Boost")
-    build_args = build_variant_to_cmake_build_args(build_variant, build_dir)
-    subprocess.run(build_args, check=True)
-
-    if command_mode == "test":
-        subprocess.run(["ctest", "--test-dir", build_dir], check=True)
 
 def parse_args():
     """Parse CLI args and form the build variants array"""
@@ -189,36 +222,62 @@ def parse_args():
         dest="address_model"
     )
 
+    parser.add_argument(
+        "--link",
+        type=str,
+        help="A comma-separated list of link models (e.g. link=static,shared)"
+    )
+
+    parser.add_argument(
+        "--ubsan",
+        action='store_true',
+        help="Build with -fsanitize=undefined"
+    )
+
+    parser.add_argument(
+        "--asan",
+        action='store_true',
+        help="Build with -fsanitize=address",
+    )
+
+    parser.add_argument(
+        "--no-cmake",
+        action="store_true",
+        help="Skip the CMake configuration step",
+        dest="no_cmake"
+    )
+
     args = parser.parse_args()
 
     cxxstds = []
     toolsets = []
     variants = []
     address_models = []
+    links = []
 
     if args.command:
         command = args.command
         if command not in ('build', 'test'):
             raise ValueError("The only permitted sub-commands for "
                              "c2.py are: \"build\" or \"test\".")
-        global command_mode
-        command_mode = command
+        global COMMAND_MODE
+        COMMAND_MODE = command
     else:
         raise ValueError("Must specify a build command such as `build` or `test.")
 
     if args.library:
-        global library
-        library = args.library
+        global LIBRARY
+        LIBRARY = args.library
     else:
         raise ValueError("Must specify a library to build, such as `hash2` or `unordered`.")
 
     if args.generator:
-        global cmake_generator
-        cmake_generator = args.generator
+        global CMAKE_GENERATOR
+        CMAKE_GENERATOR = args.generator
 
     if args.jobs:
-        global num_jobs
-        num_jobs = args.jobs
+        global NUM_JOBS
+        NUM_JOBS = args.jobs
 
     if args.cxxstd:
         result = args.cxxstd.split(",")
@@ -244,34 +303,104 @@ def parse_args():
     else:
         address_models.append(None)
 
-    print(f"read in the following cxxstds: {cxxstds}")
-    print(f"read in the following toolsets: {toolsets}")
-    print(f"read in the following variants: {variants}")
-    print(f"read in the following address-models: {address_models}")
+    if args.link:
+        result = args.link.split(",")
+
+        if len(result) != len(list(set(result))):
+            raise ValueError("Invalid link value. Should be of the form"
+                             ": --link=static,shared or --link=shared.")
+
+        for r in result:
+            if r not in ('static', 'shared'):
+                raise ValueError(f"{r} is an invalid link type, must be static or shared")
+
+        links += result
+    else:
+        links.append(None)
+
+    if args.asan:
+        global ASAN
+        ASAN = True
+
+    if args.ubsan:
+        global UBSAN
+        UBSAN = True
+
+    if args.no_cmake:
+        global NO_CONFIGURE
+        NO_CONFIGURE = True
 
     build_variants = []
     for cxxstd in cxxstds:
         for toolset in toolsets:
             for variant in variants:
                 for addr in address_models:
-                    build_variants.append(
-                        BuildVariant(
-                            toolset=toolset,
-                            variant=variant,
-                            cxxstd=cxxstd,
-                            address_model=addr
+                    for link in links:
+                        build_variants.append(
+                            BuildVariant(
+                                toolset=toolset,
+                                variant=variant,
+                                cxxstd=cxxstd,
+                                address_model=addr,
+                                link=link
+                            )
                         )
-                    )
 
     return build_variants
+
+def write_driver_makefile(build_variants):
+    """Write the main driving Makefile that users will use for building the project"""
+
+    build_dirs = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
+
+    makefile_contents = f"""
+MAKEFLAGS += --no-print-directory
+export MAKEFLAGS
+
+BUILD_DIRS := {' '.join(build_dirs)}
+
+.PHONY: all
+all: $(addsuffix /all, $(BUILD_DIRS))
+
+$(addsuffix /all, $(BUILD_DIRS)):
+	$(MAKE) -C $(dir $@) tests
+
+.PHONY: test
+test: $(addsuffix /test, $(BUILD_DIRS))
+
+$(addsuffix /test, $(BUILD_DIRS)):
+	$(MAKE) -C $(dir $@) test
+
+.PHONY: clean
+clean: $(addsuffix /clean, $(BUILD_DIRS))
+
+$(addsuffix /clean, $(BUILD_DIRS)):
+	$(MAKE) -C $(dir $@) clean
+"""
+
+    with open(os.path.join(BUILD_ROOT, "Makefile"), mode="w", encoding="utf-8") as file:
+        file.write(makefile_contents)
+
+    make_args = [shutil.which("make")]
+
+    if NUM_JOBS is not None:
+        make_args.append(f"-j{NUM_JOBS}")
+
+    subprocess.run(make_args, cwd=BUILD_ROOT, check=True)
+    return
 
 def init():
     """Main entry for bulk-building Boost via CMake"""
 
     print("starting c2.py script")
     build_variants = parse_args()
-    for build_variant in build_variants:
-        build_boost(build_variant)
+
+    for idx, build_variant in enumerate(build_variants):
+        print(f"on build job {idx + 1}/{len(build_variants)}")
+        configure_boost(build_variant)
+
+    write_driver_makefile(build_variants)
+
 
 if __name__ == "__main__":
     init()
