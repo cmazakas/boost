@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import dataclasses
 import argparse
+import sys
 
 num_cores = os.cpu_count()
 
@@ -86,7 +87,7 @@ def variant_to_build_type(variant):
 
     return None
 
-def build_variant_to_cmake_configure_args(build_variant: BuildVariant, build_dir: str):
+def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: str):
     """Programmatically generate the proper arguments to pass to CMake's configure phase"""
 
     config_args = [
@@ -157,24 +158,55 @@ def build_variant_to_cmake_build_args(build_variant: BuildVariant, build_dir: st
 
     return build_args
 
-def configure_boost(build_variant: BuildVariant):
-    """"Build a specific Boost configuration"""
+def launch_cmake_configure(build_variant: BuildVariant):
+    """"Launches a child CMake processes that begins configuring for the given build variant"""
 
     build_dir = build_variant_to_build_dir(build_variant)
+    cmake_cache_path = os.path.join(build_dir, "CMakeCache.txt")
+    if os.path.exists(cmake_cache_path):
+        # this makes sure that if a user changes the cxxflags, we always get a fresh build
+        # with correct flags
+        os.remove(cmake_cache_path)
+
+    cmake_config_cmd = build_variant_to_cmake_config_cmd(build_variant, build_dir)
+
+    print("cmake configuration command is:")
+    print(' '.join(cmake_config_cmd))
+    print('--------------------------------------------------------------------')
+
+    process = subprocess.Popen(
+        cmake_config_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    return process
+
+def configure_boost(build_variants: list[BuildVariant]):
+    """Configures the specified Boost libraries in parallel"""
 
     if NO_CONFIGURE:
-        print("skipping Boost configuration")
-    else:
-        print("configuring Boost")
+        print("skipping CMake configuration step")
+        return
 
-        cmake_cache_path = os.path.join(build_dir, "CMakeCache.txt")
-        if os.path.exists(cmake_cache_path):
-            os.remove(cmake_cache_path)
+    cmake_config_procs = []
+    for idx, build_variant in enumerate(build_variants):
+        print(f"launching configuration job {idx + 1} of {len(build_variants)}")
+        proc = launch_cmake_configure(build_variant)
+        cmake_config_procs.append(proc)
 
-        config_args = build_variant_to_cmake_configure_args(build_variant, build_dir)
-        print(' '.join(config_args))
-        subprocess.run(config_args, check=True)
+    for config_proc in cmake_config_procs:
+        config_proc.wait()
 
+    configure_failed = False
+    for config_proc in cmake_config_procs:
+        _stdout, stderr = config_proc.communicate()
+        if stderr:
+            print(stderr)
+            configure_failed = True
+
+    if configure_failed:
+        print("CMake configuration failed, exiting now")
+        sys.exit(1)
+
+    print("configuration complete")
 
 def parse_args():
     """Parse CLI args and form the build variants array"""
@@ -376,7 +408,7 @@ def parse_args():
 
     return build_variants
 
-def write_driver_makefile(build_variants):
+def build_with_driver_makefile(build_variants):
     """Write the main driving Makefile that users will use for building the project"""
 
     build_dirs = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
@@ -432,21 +464,20 @@ def run_tests():
 
     subprocess.run(make_cmd, cwd=BUILD_ROOT, check=True)
 
-
 def init():
     """Main entry for bulk-building Boost via CMake"""
 
     print("starting c2.py script")
     build_variants = parse_args()
 
-    for idx, build_variant in enumerate(build_variants):
-        print(f"on build job {idx + 1}/{len(build_variants)}")
-        configure_boost(build_variant)
+    configure_boost(build_variants)
 
-    write_driver_makefile(build_variants)
+    print("starting build phase")
 
-    print(f"command mode is: {COMMAND_MODE}")
+    build_with_driver_makefile(build_variants)
+
     if COMMAND_MODE == 'test':
+        print("running tests")
         run_tests()
 
 
