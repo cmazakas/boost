@@ -20,6 +20,8 @@ LIBRARY: str | None = None
 UBSAN: bool | None = None
 ASAN: bool | None = None
 NO_CONFIGURE: bool | None = None
+CXXFLAGS: str | None = None
+CTESTFLAGS: str | None = None
 
 @dataclasses.dataclass
 class BuildVariant:
@@ -30,8 +32,6 @@ class BuildVariant:
     variant: str | None = None
     cxxstd: str | None = None
     link: str | None = None
-    asan: bool | None = None
-    ubsan: bool | None = None
 
 def build_variant_to_build_dir_fragment(build_variant: BuildVariant):
     """A detail function intended to build the tree fragment"""
@@ -131,8 +131,10 @@ def build_variant_to_cmake_configure_args(build_variant: BuildVariant, build_dir
     if UBSAN:
         cxxflags.append('-fsanitize=undefined')
 
-    if len(cxxflags) > 0:
+    if len(cxxflags) > 0 or CXXFLAGS is not None:
         init_flags = ' '.join(cxxflags)
+        if CXXFLAGS is not None:
+            init_flags += CXXFLAGS
         config_args.append(f"-DCMAKE_CXX_FLAGS_INIT='{init_flags}'")
 
     return config_args
@@ -164,6 +166,11 @@ def configure_boost(build_variant: BuildVariant):
         print("skipping Boost configuration")
     else:
         print("configuring Boost")
+
+        cmake_cache_path = os.path.join(build_dir, "CMakeCache.txt")
+        if os.path.exists(cmake_cache_path):
+            os.remove(cmake_cache_path)
+
         config_args = build_variant_to_cmake_configure_args(build_variant, build_dir)
         print(' '.join(config_args))
         subprocess.run(config_args, check=True)
@@ -245,6 +252,19 @@ def parse_args():
         action="store_true",
         help="Skip the CMake configuration step",
         dest="no_cmake"
+    )
+
+    parser.add_argument(
+        "--cxxflags",
+        type=str,
+        help="Add custom compiler options that will be added to "
+             "`CMAKE_CXX_FLAGS_INIT` during configure time"
+    )
+
+    parser.add_argument(
+        '--ctestflags',
+        type=str,
+        help="Additional arguments to be passed to ctest during test running",
     )
 
     args = parser.parse_args()
@@ -330,6 +350,14 @@ def parse_args():
         global NO_CONFIGURE
         NO_CONFIGURE = True
 
+    if args.cxxflags:
+        global CXXFLAGS
+        CXXFLAGS = args.cxxflags
+
+    if args.ctestflags:
+        global CTESTFLAGS
+        CTESTFLAGS = args.ctestflags
+
     build_variants = []
     for cxxstd in cxxstds:
         for toolset in toolsets:
@@ -369,7 +397,7 @@ $(addsuffix /all, $(BUILD_DIRS)):
 test: $(addsuffix /test, $(BUILD_DIRS))
 
 $(addsuffix /test, $(BUILD_DIRS)):
-	$(MAKE) -C $(dir $@) test
+	$(MAKE) -C $(dir $@) test ARGS=$(ARGS)
 
 .PHONY: clean
 clean: $(addsuffix /clean, $(BUILD_DIRS))
@@ -389,6 +417,22 @@ $(addsuffix /clean, $(BUILD_DIRS)):
     subprocess.run(make_args, cwd=BUILD_ROOT, check=True)
     return
 
+def run_tests():
+    """Execute the tests via ctest"""
+
+    make_cmd = [shutil.which("make")]
+
+    if NUM_JOBS is not None:
+        make_cmd.append(f"-j{NUM_JOBS}")
+
+    make_cmd.append('test')
+
+    if CTESTFLAGS is not None:
+        make_cmd.append(f"ARGS=\"{CTESTFLAGS}\"")
+
+    subprocess.run(make_cmd, cwd=BUILD_ROOT, check=True)
+
+
 def init():
     """Main entry for bulk-building Boost via CMake"""
 
@@ -400,6 +444,10 @@ def init():
         configure_boost(build_variant)
 
     write_driver_makefile(build_variants)
+
+    print(f"command mode is: {COMMAND_MODE}")
+    if COMMAND_MODE == 'test':
+        run_tests()
 
 
 if __name__ == "__main__":
