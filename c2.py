@@ -90,6 +90,8 @@ def variant_to_build_type(variant):
 def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: str):
     """Programmatically generate the proper arguments to pass to CMake's configure phase"""
 
+    fragment = build_variant_to_build_dir_fragment(build_variant)
+
     config_args = [
         shutil.which("cmake"),
         "-S", ".",
@@ -99,7 +101,9 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
         "-DCMAKE_CXX_VISIBILITY_PRESET=hidden",
         "-DCMAKE_VISIBILITY_INLINES_HIDDEN=ON",
-        "-G", "Unix Makefiles",
+        "-G", "Ninja",
+        f"-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}",
+        "-DCMAKE_SUPPRESS_REGENERATION=ON",
     ]
 
     if build_variant.toolset is not None:
@@ -449,6 +453,48 @@ $(addsuffix /clean, $(BUILD_DIRS)):
     subprocess.run(make_args, cwd=BUILD_ROOT, check=True)
     return
 
+def build_with_driver_ninja_file(build_variants):
+    """Write the main driving ninja.build that users will use for building the project"""
+
+    builds_dir_fragments = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
+
+    with open(os.path.join(BUILD_ROOT, "build.ninja"), mode="w", encoding="utf-8") as file:
+        for build_dir in builds_dir_fragments:
+            file.write(f"subninja {build_dir}/build.ninja\n")
+        file.write("\n")
+
+        ts = [os.path.join(path, "tests") for path in builds_dir_fragments]
+        file.write(f"build all: phony {' '.join(ts)}\n")
+
+        cs = [os.path.join(path, "clean") for path in builds_dir_fragments]
+        file.write(f"build clean: phony {' '.join(cs)}\n")
+
+        file.write("\n")
+        file.write("default all")
+        file.write("\n")
+
+    txt = None
+    for fragment in builds_dir_fragments:
+        ninja_file = os.path.join(BUILD_ROOT, fragment, "build.ninja")
+
+        with open(ninja_file, mode="r", encoding="utf-8") as file:
+            txt = file.read()
+
+        updated_txt = txt.replace(
+            "cmake_object_order_depends_target_boost",
+            f"cmake_object_order_depends_target_boost_{fragment}")
+
+        with open(ninja_file, mode="w", encoding="utf-8") as file:
+            file.write(updated_txt)
+
+
+    ninja_cmd = [shutil.which("ninja")]
+    if NUM_JOBS is not None:
+        ninja_cmd.append(f"-j{NUM_JOBS}")
+
+    subprocess.run(ninja_cmd, cwd=BUILD_ROOT, check=True)
+    return
+
 def run_tests():
     """Execute the tests via ctest"""
 
@@ -471,14 +517,14 @@ def init():
     build_variants = parse_args()
 
     configure_boost(build_variants)
+    build_with_driver_ninja_file(build_variants)
 
-    print("starting build phase")
+    # print("starting build phase")
+    # build_with_driver_makefile(build_variants)
 
-    build_with_driver_makefile(build_variants)
-
-    if COMMAND_MODE == 'test':
-        print("running tests")
-        run_tests()
+    # if COMMAND_MODE == 'test':
+    #     print("running tests")
+    #     run_tests()
 
 
 if __name__ == "__main__":
