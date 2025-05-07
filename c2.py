@@ -279,6 +279,21 @@ def configure_boost(build_variants: list[BuildVariant]):
         print("CMake configuration failed, exiting now")
         sys.exit(1)
 
+    builds_dir_fragments = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
+    txt = None
+    for fragment in builds_dir_fragments:
+        ninja_file = os.path.join(BUILD_ROOT, fragment, "build.ninja")
+
+        with open(ninja_file, mode="r", encoding="utf-8") as file:
+            txt = file.read()
+
+        updated_txt = txt.replace(
+            "cmake_object_order_depends_target_boost",
+            f"cmake_object_order_depends_target_boost_{fragment}")
+
+        with open(ninja_file, mode="w", encoding="utf-8") as file:
+            file.write(updated_txt)
+
     print("configuration complete")
 
 def parse_args():
@@ -541,21 +556,6 @@ def build_with_driver_ninja_file(build_variants):
         file.write("\n")
         file.write("default all")
         file.write("\n")
-
-    txt = None
-    for fragment in builds_dir_fragments:
-        ninja_file = os.path.join(BUILD_ROOT, fragment, "build.ninja")
-
-        with open(ninja_file, mode="r", encoding="utf-8") as file:
-            txt = file.read()
-
-        updated_txt = txt.replace(
-            "cmake_object_order_depends_target_boost",
-            f"cmake_object_order_depends_target_boost_{fragment}")
-
-        with open(ninja_file, mode="w", encoding="utf-8") as file:
-            file.write(updated_txt)
-
 
     ninja_cmd = [shutil.which("ninja")]
     if NUM_JOBS is not None:
