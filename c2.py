@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# pylint: disable=global-statement
+# pylint: disable=global-statement,line-too-long
 
 """Python-based version of b2 using pure CMake"""
 
@@ -90,8 +90,52 @@ def variant_to_build_type(variant):
 def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: str):
     """Programmatically generate the proper arguments to pass to CMake's configure phase"""
 
-    fragment = build_variant_to_build_dir_fragment(build_variant)
+    msvc_toolchains = {
+        "14.1": {
+            "include": [
+                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.16.27023\\include\"",
+                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\VS\\include\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\ucrt\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\um\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\shared\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\winrt\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\cppwinrt\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\NETFXSDK\\4.8\\include\\um\"",
+            ],
+            "libpath": [
+                "/LIBPATH:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.16.27023\\lib\\x64\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\NETFXSDK\\4.8\\lib\\um\\x64\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.22621.0\\ucrt\\x64\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.22621.0\\um\\x64\"",
+            ],
+            "cxx": "/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.16.27023/bin/HostX64/x64/cl.exe"
+        },
+        "14.4": {
+            "include": [
+                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.42.34433\\include\"",
+                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.42.34433\\ATLMFC\\include\"",
+                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\VS\\include\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\ucrt\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\um\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\shared\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\winrt\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\cppwinrt\"",
+                "-IC:\"\\Program Files (x86)\\Windows Kits\\NETFXSDK\\4.8\\include\\um\"",
+            ],
+            "libpath":[
+                "/LIBPATH:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.42.34433\\ATLMFC\\lib\\x64\"",
+                "/LIBPATH:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.42.34433\\lib\\x64\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\NETFXSDK\\4.8\\lib\\um\\x64\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.22621.0\\ucrt\\x64\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.22621.0\\um\\x64\"",
+            ],
+            "cxx": "c:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.42.34433/bin/Hostx64/x64/cl.exe"
+        }
+    }
 
+    toolset = msvc_toolchains[build_variant.toolset.replace("msvc-", "")]
+
+    fragment = build_variant_to_build_dir_fragment(build_variant)
     config_args = [
         shutil.which("cmake"),
         "-S", ".",
@@ -104,12 +148,16 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         "-G", "Ninja",
         f"-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}",
         "-DCMAKE_SUPPRESS_REGENERATION=ON",
+        f"-DCMAKE_EXE_LINKER_FLAGS_INIT=/link {' '.join(toolset["libpath"])}"
     ]
 
-    if build_variant.toolset is not None:
-        cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
-        config_args.append(f"-DCMAKE_C_COMPILER={build_variant.toolset}")
-        config_args.append(f"-DCMAKE_CXX_COMPILER={cxx_compiler}")
+    # if build_variant.toolset is not None:
+    #     cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
+    #     config_args.append(f"-DCMAKE_C_COMPILER={build_variant.toolset}")
+    #     config_args.append(f"-DCMAKE_CXX_COMPILER={cxx_compiler}")
+
+    config_args.append(f"-DCMAKE_C_COMPILER={toolset["cxx"]}")
+    config_args.append(f"-DCMAKE_CXX_COMPILER={toolset["cxx"]}")
 
     if build_variant.variant is not None:
         build_type = variant_to_build_type(build_variant.variant)
@@ -126,7 +174,8 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
     elif build_variant.link == 'static':
         config_args.append("-DBUILD_SHARED_LIBS=OFF")
 
-    cxxflags = []
+    cxxflags = toolset["include"]
+
     if build_variant.address_model == '32':
         cxxflags.append('-m32')
 
@@ -140,7 +189,8 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         init_flags = ' '.join(cxxflags)
         if CXXFLAGS is not None:
             init_flags += CXXFLAGS
-        config_args.append(f"-DCMAKE_CXX_FLAGS_INIT='{init_flags}'")
+        config_args.append(f"-DCMAKE_CXX_FLAGS_INIT='{init_flags} /bigobj'")
+        config_args.append(f"-DCMAKE_C_FLAGS_INIT='{init_flags} /bigobj'")
 
     return config_args
 
@@ -197,11 +247,11 @@ def configure_boost(build_variants: list[BuildVariant]):
         cmake_config_procs.append(proc)
 
     for config_proc in cmake_config_procs:
+        _stdout, stderr = config_proc.communicate()
         config_proc.wait()
 
     configure_failed = False
     for config_proc in cmake_config_procs:
-        _stdout, stderr = config_proc.communicate()
         if stderr:
             print(stderr)
             configure_failed = True
