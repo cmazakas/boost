@@ -90,7 +90,25 @@ def variant_to_build_type(variant):
 def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: str):
     """Programmatically generate the proper arguments to pass to CMake's configure phase"""
 
+
     msvc_toolchains = {
+        "14.0": {
+            "include": [
+                '-IC:"\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\INCLUDE"',
+                '-IC:"\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\ATLMFC\\INCLUDE"',
+                '-IC:"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\ucrt"',
+                '-IC:"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\shared"',
+                '-IC:"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\um"',
+                '-IC:"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\winrt"',
+            ],
+            "libpath":[
+                "/LIBPATH:\"\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\lib\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\ATLMFC\\lib\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.22621.0\\ucrt\\x86\"",
+                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.22621.0\\um\\x86\"",
+            ],
+            "cxx": "c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/cl.exe"
+        },
         "14.1": {
             "include": [
                 "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.16.27023\\include\"",
@@ -269,16 +287,16 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Parse all build options and assemble the matrix.")
 
     parser.add_argument(
-        "library",
-        type=str,
-        help="Name of the library to build tests for."
-    )
-
-    parser.add_argument(
         "command",
         type=str,
         help="Main driver command. Either just `build` or `test`. `test` implies `build` but also "
              "invokes `ctest` for each generated build directory."
+    )
+
+    parser.add_argument(
+        "library",
+        type=str,
+        help="Name of the library to build tests for."
     )
 
     parser.add_argument("-G", type=str, help="The CMake generator to use.", dest="generator")
