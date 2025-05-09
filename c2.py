@@ -34,6 +34,10 @@ class BuildVariant:
     cxxstd: str | None = None
     link: str | None = None
 
+def is_windows():
+    """Helper used to determine if we're running on Windows or not-Windows"""
+    return os.name == 'nt'
+
 def build_variant_to_build_dir_fragment(build_variant: BuildVariant):
     """A detail function intended to build the tree fragment"""
 
@@ -89,7 +93,6 @@ def variant_to_build_type(variant):
 
 def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: str):
     """Programmatically generate the proper arguments to pass to CMake's configure phase"""
-
 
     msvc_toolchains = {
         "14.0": {
@@ -151,8 +154,6 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         }
     }
 
-    toolset = msvc_toolchains[build_variant.toolset.replace("msvc-", "")]
-
     fragment = build_variant_to_build_dir_fragment(build_variant)
     config_args = [
         shutil.which("cmake"),
@@ -166,17 +167,21 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         "-G", "Ninja",
         f"-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}",
         "-DCMAKE_SUPPRESS_REGENERATION=ON",
-        f"-DCMAKE_EXE_LINKER_FLAGS_INIT=/link {' '.join(toolset["libpath"])}",
-        f"-DCMAKE_SHARED_LINKER_FLAGS_INIT=/link {' '.join(toolset["libpath"])}",
     ]
 
-    # if build_variant.toolset is not None:
-    #     cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
-    #     config_args.append(f"-DCMAKE_C_COMPILER={build_variant.toolset}")
-    #     config_args.append(f"-DCMAKE_CXX_COMPILER={cxx_compiler}")
-
-    config_args.append(f"-DCMAKE_C_COMPILER={toolset["cxx"]}")
-    config_args.append(f"-DCMAKE_CXX_COMPILER={toolset["cxx"]}")
+    if build_variant.toolset is not None:
+        if is_windows():
+            toolchain = msvc_toolchains[build_variant.toolset.replace("msvc-", "")]
+            config_args.append(f"-DCMAKE_EXE_LINKER_FLAGS_INIT=/link {' '.join(toolchain['libpath'])}")
+            config_args.append(f"-DCMAKE_SHARED_LINKER_FLAGS_INIT=/link {' '.join(toolchain['libpath'])}")
+            config_args.append(f"-DCMAKE_C_COMPILER={toolchain['cxx']}")
+            config_args.append(f"-DCMAKE_CXX_COMPILER={toolchain['cxx']}")
+        else:
+            cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
+            config_args.append(f"-DCMAKE_C_COMPILER={build_variant.toolset}")
+            config_args.append(f"-DCMAKE_CXX_COMPILER={cxx_compiler}")
+    else:
+        raise ValueError("a toolset must be specified")
 
     if build_variant.variant is not None:
         build_type = variant_to_build_type(build_variant.variant)
@@ -192,24 +197,42 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         config_args.append("-DBUILD_SHARED_LIBS=ON")
     elif build_variant.link == 'static':
         config_args.append("-DBUILD_SHARED_LIBS=OFF")
+    elif build_variant.link is not None:
+        raise ValueError(f"invalid link type value {build_variant.link}. Should be static or shared")
+    else:
+        config_args.append("-DBUILD_SHARED_LIBS=OFF")
 
-    cxxflags = toolset["include"]
+    if is_windows():
+        cxxflags = toolchain["include"].copy()
+        cxxflags.append('/bigobj')
+    else:
+        cxxflags = []
 
     if build_variant.address_model == '32':
+        if is_windows():
+            raise NotImplementedError()
+
         cxxflags.append('-m32')
 
     if ASAN:
+        if is_windows():
+            raise NotImplementedError()
+
         cxxflags.append('-fsanitize=address')
 
     if UBSAN:
+        if is_windows():
+            raise NotImplementedError()
+
         cxxflags.append('-fsanitize=undefined')
 
     if len(cxxflags) > 0 or CXXFLAGS is not None:
         init_flags = ' '.join(cxxflags)
         if CXXFLAGS is not None:
             init_flags += CXXFLAGS
-        config_args.append(f"-DCMAKE_CXX_FLAGS_INIT='{init_flags} /bigobj'")
-        config_args.append(f"-DCMAKE_C_FLAGS_INIT='{init_flags} /bigobj'")
+
+        config_args.append(f"-DCMAKE_CXX_FLAGS_INIT='{init_flags}'")
+        config_args.append(f"-DCMAKE_C_FLAGS_INIT='{init_flags}'")
 
     return config_args
 
@@ -217,7 +240,7 @@ def build_variant_to_cmake_build_args(build_variant: BuildVariant, build_dir: st
     """Programmatically generate the proper arguments to pass to CMake's build phase"""
 
     build_args = [
-        "cmake",
+        shutil.which("cmake"),
         "--build", build_dir,
         "--target", "tests",
     ]
@@ -228,6 +251,8 @@ def build_variant_to_cmake_build_args(build_variant: BuildVariant, build_dir: st
     if build_variant.variant is not None:
         build_type = variant_to_build_type(build_variant.variant)
         build_args.append(f"--config {build_type}")
+    else:
+        build_args.append("--config Debug")
 
     return build_args
 
