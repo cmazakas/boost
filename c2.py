@@ -148,7 +148,8 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         "-G", "Ninja",
         f"-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}",
         "-DCMAKE_SUPPRESS_REGENERATION=ON",
-        f"-DCMAKE_EXE_LINKER_FLAGS_INIT=/link {' '.join(toolset["libpath"])}"
+        f"-DCMAKE_EXE_LINKER_FLAGS_INIT=/link {' '.join(toolset["libpath"])}",
+        f"-DCMAKE_SHARED_LINKER_FLAGS_INIT=/link {' '.join(toolset["libpath"])}",
     ]
 
     # if build_variant.toolset is not None:
