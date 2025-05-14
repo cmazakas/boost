@@ -301,6 +301,8 @@ def configure_boost(build_variants: list[BuildVariant]):
     toolsets = {}
 
     for msvc_toolset in msvc_toolsets:
+        print(f'gathering toolset info for msvc-{msvc_toolset}')
+
         filename = f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt'
 
         get_vcvars_cmd = ['get_vcvars.bat', filename, arch, msvc_toolset]
@@ -342,6 +344,9 @@ def configure_boost(build_variants: list[BuildVariant]):
                     libs = [f'/LIBPATH:"{lib.replace('C:', '')}"' for lib in libs]
                     p['libpath'] = libs
 
+            print('----------------------------------------')
+            print('completed building toolset database file')
+
     print('built the following toolsets for msvc')
     print(toolsets)
 
@@ -352,10 +357,17 @@ def configure_boost(build_variants: list[BuildVariant]):
         cmake_config_procs.append(proc)
 
     configure_failed = False
+
+    pipes = []
+
     for config_proc in cmake_config_procs:
         stdout, stderr = config_proc.communicate()
+        pipes.append((stdout, stderr))
+
+    for i, config_proc in enumerate(cmake_config_procs):
         config_proc.wait()
 
+        stdout, stderr = pipes[i]
         if stderr:
             print("cmake configuration wrote the following to stderr:")
             print(stdout)
