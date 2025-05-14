@@ -358,16 +358,27 @@ def configure_boost(build_variants: list[BuildVariant]):
 
     configure_failed = False
 
-    pipes = []
-
-    for config_proc in cmake_config_procs:
-        stdout, stderr = config_proc.communicate()
-        pipes.append((stdout, stderr))
+    # pipes = []
+    outputs = [['', '']] * len(cmake_config_procs)
 
     for i, config_proc in enumerate(cmake_config_procs):
+        if config_proc.poll() is None:
+            try:
+                stdout, stderr = config_proc.communicate(input=None, timeout=0.25)
+                outputs[i][0] += stdout
+                outputs[i][1] += stderr
+            except subprocess.TimeoutExpired:
+                continue
+
+        # pipes.append((stdout, stderr))
+
+    for i, config_proc in enumerate(cmake_config_procs):
+        stdout, stderr = config_proc.communicate()
+        outputs[i][0] += stdout
+        outputs[i][1] += stderr
         config_proc.wait()
 
-        stdout, stderr = pipes[i]
+        stdout, stderr = outputs[i]
         if stderr:
             print("cmake configuration wrote the following to stderr:")
             print(stdout)
@@ -380,6 +391,9 @@ def configure_boost(build_variants: list[BuildVariant]):
         print("CMake configuration failed, exiting now")
         sys.exit(1)
 
+    print("configuration complete")
+
+    print('patching ninja files')
     builds_dir_fragments = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
     txt = None
     for fragment in builds_dir_fragments:
@@ -395,7 +409,7 @@ def configure_boost(build_variants: list[BuildVariant]):
         with open(ninja_file, mode="w", encoding="utf-8") as file:
             file.write(updated_txt)
 
-    print("configuration complete")
+    print('completed patching ninja')
 
 def parse_args():
     """Parse CLI args and form the build variants array"""
