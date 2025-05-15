@@ -273,10 +273,11 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
         text = file.read().splitlines()
         print(text)
 
-        toolsets[msvc_toolset] = {
-            'amd64': {},
-            'x86': {}
-        }
+        if toolsets.get(msvc_toolset) is None:
+            toolsets[msvc_toolset] = {
+                'amd64': {},
+                'x86': {}
+            }
 
         p = toolsets[msvc_toolset][arch]
         for line in text:
