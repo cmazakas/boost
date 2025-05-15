@@ -10,6 +10,7 @@ import subprocess
 import dataclasses
 import argparse
 import sys
+import pprint
 
 num_cores = os.cpu_count()
 
@@ -97,148 +98,107 @@ def variant_to_build_type(variant):
 def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: str, msvc_toolset):
     """Programmatically generate the proper arguments to pass to CMake's configure phase"""
 
-    msvc_toolchains = {
-        "14.0": {
-            "include": [
-                '-IC:"\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\INCLUDE"',
-                '-IC:"\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\ATLMFC\\INCLUDE"',
-                '-IC:"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\ucrt"',
-                '-IC:"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\shared"',
-                '-IC:"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\um"',
-                '-IC:"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.22621.0\\winrt"',
-            ],
-            "libpath":[
-                "/LIBPATH:\"\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\lib\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\ATLMFC\\lib\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.22621.0\\ucrt\\x86\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.22621.0\\um\\x86\"",
-            ],
-            "cxx": "c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin/cl.exe"
-        },
-        "14.1": {
-            "include": [
-                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.16.27023\\include\"",
-                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\VS\\include\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\ucrt\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\um\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\shared\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\winrt\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\cppwinrt\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\NETFXSDK\\4.8\\include\\um\"",
-            ],
-            "libpath": [
-                "/LIBPATH:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.16.27023\\lib\\x64\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\NETFXSDK\\4.8\\lib\\um\\x64\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.26100.0\\ucrt\\x64\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.26100.0\\um\\x64\"",
-            ],
-            "cxx": "/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.16.27023/bin/HostX64/x64/cl.exe"
-        },
-        "14.4": {
-            "include": [
-                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\include\"",
-                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\ATLMFC\\include\"",
-                "-IC:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\VS\\include\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\ucrt\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\um\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\shared\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\winrt\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\10\\include\\10.0.26100.0\\cppwinrt\"",
-                "-IC:\"\\Program Files (x86)\\Windows Kits\\NETFXSDK\\4.8\\include\\um\"",
-            ],
-            "libpath":[
-                "/LIBPATH:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\ATLMFC\\lib\\x64\"",
-                "/LIBPATH:\"\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\lib\\x64\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\NETFXSDK\\4.8\\lib\\um\\x64\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.26100.0\\ucrt\\x64\"",
-                "/LIBPATH:\"\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.26100.0\\um\\x64\"",
-            ],
-            "cxx": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe"
-        }
-    }
-
     fragment = build_variant_to_build_dir_fragment(build_variant)
-    config_args = [
-        CMAKE_PATH,
-        "-S", ".",
-        "-B", build_dir,
-        "-DBUILD_TESTING=ON",
-        f"-DBOOST_INCLUDE_LIBRARIES={LIBRARY}",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        "-DCMAKE_CXX_VISIBILITY_PRESET=hidden",
-        "-DCMAKE_VISIBILITY_INLINES_HIDDEN=ON",
-        "-G", "Ninja",
-        f"-DCMAKE_MAKE_PROGRAM='{NINJA_PATH}'",
-        f"-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}",
-        "-DCMAKE_SUPPRESS_REGENERATION=ON",
-    ]
 
-    if build_variant.toolset is not None:
-        if is_windows():
-            toolchain = msvc_toolset
-            config_args.append(f"-DCMAKE_EXE_LINKER_FLAGS_INIT=/link {' '.join(toolchain['libpath'])}")
-            config_args.append(f"-DCMAKE_SHARED_LINKER_FLAGS_INIT=/link {' '.join(toolchain['libpath'])}")
-            config_args.append(f"-DCMAKE_C_COMPILER={toolchain['cl']}")
-            config_args.append(f"-DCMAKE_CXX_COMPILER={toolchain['cl']}")
-            config_args.append(f"-DCMAKE_RC_COMPILER={toolchain['rc']}")
-            config_args.append(f"-DCMAKE_MT={toolchain['mt']}")
+    os.makedirs(build_dir, exist_ok=True)
+    toolchain_file = os.path.join(build_dir, 'toolchain.cmake')
+
+    with open(toolchain_file, 'w', encoding='utf-8') as file:
+        config_args = [
+            CMAKE_PATH,
+            "-S", ".",
+            "-B", build_dir,
+            "-G", "Ninja",
+            f'-DBOOST_INCLUDE_LIBRARIES={LIBRARY}',
+            f'-DCMAKE_MAKE_PROGRAM={NINJA_PATH}',
+            f'-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}',
+            '-DCMAKE_SUPPRESS_REGENERATION=ON',
+            f'-DCMAKE_TOOLCHAIN_FILE={toolchain_file}',
+        ]
+
+        file.writelines([
+            'set(BUILD_TESTING ON)\n',
+            'set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n',
+            'set(CMAKE_CXX_VISIBILITY_PRESET hidden)\n',
+            'set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)\n',
+        ])
+
+        if build_variant.toolset is not None:
+            if is_windows():
+                toolchain = msvc_toolset
+                libpaths = ' '.join(toolchain['libpath']).replace('\\', '\\\\').replace('"', '\\"')
+                file.writelines([
+                    f'set(CMAKE_EXE_LINKER_FLAGS_INIT "{libpaths}")\n',
+                    f'set(CMAKE_SHARED_LINKER_FLAGS_INIT "{libpaths}")\n',
+                    f'set(CMAKE_C_COMPILER "{toolchain['cl']}")\n',
+                    f'set(CMAKE_CXX_COMPILER "{toolchain['cl']}")\n',
+                    f'set(CMAKE_RC_COMPILER "{toolchain['rc']}")\n',
+                    f'set(CMAKE_MT "{toolchain['mt']}")\n',
+                ])
+            else:
+                toolchain = None
+                cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
+                file.writelines([
+                    f'set(CMAKE_C_COMPILER "{build_variant.toolset}")\n',
+                    f'set(CMAKE_CXX_COMPILER "{cxx_compiler}")\n',
+                ])
         else:
-            cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
-            config_args.append(f"-DCMAKE_C_COMPILER={build_variant.toolset}")
-            config_args.append(f"-DCMAKE_CXX_COMPILER={cxx_compiler}")
-    else:
-        raise ValueError("a toolset must be specified")
+            raise ValueError("a toolset must be specified")
 
-    if build_variant.variant is not None:
-        build_type = variant_to_build_type(build_variant.variant)
-        config_args.append(f"-DCMAKE_BUILD_TYPE={build_type}")
-    else:
-        config_args.append("-DCMAKE_BUILD_TYPE=Debug")
+        if build_variant.variant is not None:
+            build_type = variant_to_build_type(build_variant.variant)
+            file.write(f'set(CMAKE_BUILD_TYPE {build_type}\n)')
+        else:
+            file.write("set(CMAKE_BUILD_TYPE Debug)\n")
 
-    if build_variant.cxxstd is not None:
-        cxxstd = build_variant.cxxstd
-        config_args.append(f"-DCMAKE_CXX_STANDARD={cxxstd}")
+        if build_variant.cxxstd is not None:
+            cxxstd = build_variant.cxxstd
+            file.write(f'set(CMAKE_CXX_STANDARD {cxxstd})\n')
 
-    if build_variant.link == 'shared':
-        config_args.append("-DBUILD_SHARED_LIBS=ON")
-    elif build_variant.link == 'static':
-        config_args.append("-DBUILD_SHARED_LIBS=OFF")
-    elif build_variant.link is not None:
-        raise ValueError(f"invalid link type value {build_variant.link}. Should be static or shared")
-    else:
-        config_args.append("-DBUILD_SHARED_LIBS=OFF")
+        if build_variant.link == 'shared':
+            file.write('set(BUILD_SHARED_LIBS ON)\n')
+        elif build_variant.link == 'static':
+            file.write("set(BUILD_SHARED_LIBS OFF)\n")
+        elif build_variant.link is not None:
+            raise ValueError(f"invalid link type value {build_variant.link}. Should be static or shared")
+        else:
+            file.write("set(BUILD_SHARED_LIBS OFF)\n")
 
-    if is_windows():
-        cxxflags = toolchain["include"].copy()
-        cxxflags.append('/bigobj')
-    else:
-        cxxflags = []
-
-    if build_variant.address_model == '32':
         if is_windows():
-            raise NotImplementedError()
+            assert toolchain is not None
+            cxxflags = toolchain["include"].copy()
+            cxxflags.append('/bigobj')
+        else:
+            cxxflags = []
 
-        cxxflags.append('-m32')
+        if build_variant.address_model == '32':
+            if not is_windows():
+                cxxflags.append('-m32')
 
-    if ASAN:
-        if is_windows():
-            raise NotImplementedError()
+        if ASAN:
+            if is_windows():
+                raise NotImplementedError()
 
-        cxxflags.append('-fsanitize=address')
+            cxxflags.append('-fsanitize=address')
 
-    if UBSAN:
-        if is_windows():
-            raise NotImplementedError()
+        if UBSAN:
+            if is_windows():
+                raise NotImplementedError()
 
-        cxxflags.append('-fsanitize=undefined')
+            cxxflags.append('-fsanitize=undefined')
 
-    if len(cxxflags) > 0 or CXXFLAGS is not None:
-        init_flags = ' '.join(cxxflags)
-        if CXXFLAGS is not None:
-            init_flags += CXXFLAGS
+        if len(cxxflags) > 0 or CXXFLAGS is not None:
+            init_flags = ' '.join(cxxflags)
+            if CXXFLAGS is not None:
+                init_flags += CXXFLAGS
 
-        config_args.append(f"-DCMAKE_CXX_FLAGS_INIT='{init_flags}'")
-        config_args.append(f"-DCMAKE_C_FLAGS_INIT='{init_flags}'")
+            if is_windows():
+                init_flags = init_flags.replace('\\', '\\\\').replace('"', '\\"')
+
+            file.writelines([
+                f'set(CMAKE_CXX_FLAGS_INIT "{init_flags}")\n',
+                f'set(CMAKE_C_FLAGS_INIT "{init_flags}")\n',
+            ])
 
     return config_args
 
@@ -272,8 +232,13 @@ def launch_cmake_configure(build_variant: BuildVariant, toolsets):
         # with correct flags
         os.remove(cmake_cache_path)
 
-    if is_windows() and build_variant.toolset.startswith('msvc-'):
-        toolset = toolsets[build_variant.toolset.replace('msvc-', '')]
+    if is_windows() and build_variant.toolset is not None and build_variant.toolset.startswith('msvc-'):
+        if build_variant.address_model == '32':
+            arch = 'x86'
+        else:
+            arch = 'amd64'
+
+        toolset = toolsets[build_variant.toolset.replace('msvc-', '')][arch]
     else:
         toolset = None
 
@@ -288,6 +253,58 @@ def launch_cmake_configure(build_variant: BuildVariant, toolsets):
 
     return process
 
+def generate_msvc_toolset(arch, msvc_toolset, toolsets):
+    """Runs a batch-local version of vcvarsall with the appropriate args to probe for all required paths to build a working toolchain"""
+
+    filename = f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt'
+
+    get_vcvars_cmd = ['get_vcvars.bat', filename, arch, msvc_toolset]
+    if WINSDK_VERSION is not None:
+        get_vcvars_cmd.append(WINSDK_VERSION)
+
+    print(f'going to run vcvars cmd: {' '.join(get_vcvars_cmd)}')
+
+    subprocess.run(
+        get_vcvars_cmd,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, check=True)
+
+    with open(filename, mode="r", encoding="utf-8") as file:
+        text = file.read().splitlines()
+        print(text)
+
+        toolsets[msvc_toolset] = {
+            'amd64': {},
+            'x86': {}
+        }
+
+        p = toolsets[msvc_toolset][arch]
+        for line in text:
+            if line.endswith('cl.exe') and p.get('cl') is None:
+                p['cl'] = line.replace('\\', '/')
+
+            if line.endswith('rc.exe') and p.get('rc') is None:
+                p['rc'] = line.replace('\\', '/')
+
+            if line.endswith('mt.exe') and p.get('mt') is None:
+                p['mt'] = line.replace('\\', '/')
+
+            if line.startswith('INCLUDE='):
+                includes = line.split('=')
+                includes = includes[1].split(';')
+                includes = [f'-IC:"{include.replace('C:', '')}"' for include in includes]
+
+                p['include'] = includes
+
+            if line.startswith('LIB='):
+                libs = line.split('=')
+                libs = libs[1].split(';')
+                libs = [f'/LIBPATH:"{lib.replace('C:', '')}"' for lib in libs]
+                p['libpath'] = libs
+
+        print('----------------------------------------')
+        print('completed building toolset database file')
+
 def configure_boost(build_variants: list[BuildVariant]):
     """Configures the specified Boost libraries in parallel"""
 
@@ -295,60 +312,24 @@ def configure_boost(build_variants: list[BuildVariant]):
         print("skipping CMake configuration step")
         return
 
-    arch = 'amd64'
     msvc_toolsets = list(set([build_variant.toolset.replace('msvc-', '') for build_variant in build_variants]))
 
-    toolsets = {}
+    has_32_bit = any(build_variant.address_model == '32' for build_variant in build_variants)
+    has_64_bit = any(build_variant.address_model == '64' or build_variant.address_model is None for build_variant in build_variants)
 
+    toolsets = {}
     for msvc_toolset in msvc_toolsets:
         print(f'gathering toolset info for msvc-{msvc_toolset}')
+        if has_32_bit:
+            arch = 'x86'
+            generate_msvc_toolset(arch, msvc_toolset, toolsets)
 
-        filename = f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt'
-
-        get_vcvars_cmd = ['get_vcvars.bat', filename, arch, msvc_toolset]
-        if WINSDK_VERSION is not None:
-            get_vcvars_cmd.append(WINSDK_VERSION)
-
-        subprocess.run(
-            get_vcvars_cmd,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, check=True)
-
-        with open(filename, mode="r", encoding="utf-8") as file:
-            text = file.read().splitlines()
-            print(text)
-
-            toolsets[msvc_toolset] = {}
-
-            p = toolsets[msvc_toolset]
-            for line in text:
-                if line.endswith('cl.exe') and p.get('cl') is None:
-                    p['cl'] = line.replace('\\', '/')
-
-                if line.endswith('rc.exe') and p.get('rc') is None:
-                    p['rc'] = line.replace('\\', '/')
-
-                if line.endswith('mt.exe') and p.get('mt') is None:
-                    p['mt'] = line.replace('\\', '/')
-
-                if line.startswith('INCLUDE='):
-                    includes = line.split('=')
-                    includes = includes[1].split(';')
-                    includes = [f'-IC:"{include.replace('C:', '')}"' for include in includes]
-
-                    p['include'] = includes
-
-                if line.startswith('LIB='):
-                    libs = line.split('=')
-                    libs = libs[1].split(';')
-                    libs = [f'/LIBPATH:"{lib.replace('C:', '')}"' for lib in libs]
-                    p['libpath'] = libs
-
-            print('----------------------------------------')
-            print('completed building toolset database file')
+        if has_64_bit:
+            arch = 'amd64'
+            generate_msvc_toolset(arch, msvc_toolset, toolsets)
 
     print('built the following toolsets for msvc')
-    print(toolsets)
+    pprint.pprint(toolsets, width=256)
 
     cmake_config_procs = []
     for idx, build_variant in enumerate(build_variants):
