@@ -147,7 +147,7 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
 
         if build_variant.variant is not None:
             build_type = variant_to_build_type(build_variant.variant)
-            file.write(f'set(CMAKE_BUILD_TYPE {build_type}\n)')
+            file.write(f'set(CMAKE_BUILD_TYPE {build_type})\n')
         else:
             file.write("set(CMAKE_BUILD_TYPE Debug)\n")
 
@@ -232,7 +232,7 @@ def launch_cmake_configure(build_variant: BuildVariant, toolsets):
         # with correct flags
         os.remove(cmake_cache_path)
 
-    if is_windows() and build_variant.toolset is not None and build_variant.toolset.startswith('msvc-'):
+    if is_windows() and build_variant.toolset.startswith('msvc-') or build_variant.toolset == 'clang-win':
         if build_variant.address_model == '32':
             arch = 'x86'
         else:
@@ -258,7 +258,12 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
 
     filename = f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt'
 
-    get_vcvars_cmd = ['get_vcvars.bat', filename, arch, msvc_toolset]
+    if msvc_toolset == 'clang-win':
+        vcvars_ver = ''
+    else:
+        vcvars_ver = msvc_toolset
+
+    get_vcvars_cmd = ['get_vcvars.bat', filename, arch, vcvars_ver]
     if WINSDK_VERSION is not None:
         get_vcvars_cmd.append(WINSDK_VERSION)
 
@@ -281,7 +286,10 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
 
         p = toolsets[msvc_toolset][arch]
         for line in text:
-            if line.endswith('cl.exe') and p.get('cl') is None:
+            if msvc_toolset != 'clang-win' and line.endswith('cl.exe') and p.get('cl') is None:
+                p['cl'] = line.replace('\\', '/')
+
+            if line.endswith('clang-cl.exe') and p.get('cl') is None:
                 p['cl'] = line.replace('\\', '/')
 
             if line.endswith('rc.exe') and p.get('rc') is None:
@@ -471,7 +479,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--no-cmake",
+        "--skip-configure",
         action="store_true",
         help="Skip the CMake configuration step",
         dest="no_cmake"
@@ -612,47 +620,6 @@ def parse_args():
 
     return build_variants
 
-def build_with_driver_makefile(build_variants):
-    """Write the main driving Makefile that users will use for building the project"""
-
-    build_dirs = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
-
-    makefile_contents = f"""
-MAKEFLAGS += --no-print-directory
-export MAKEFLAGS
-
-BUILD_DIRS := {' '.join(build_dirs)}
-
-.PHONY: all
-all: $(addsuffix /all, $(BUILD_DIRS))
-
-$(addsuffix /all, $(BUILD_DIRS)):
-	$(MAKE) -C $(dir $@) tests
-
-.PHONY: test
-test: $(addsuffix /test, $(BUILD_DIRS))
-
-$(addsuffix /test, $(BUILD_DIRS)):
-	$(MAKE) -C $(dir $@) test ARGS=$(ARGS)
-
-.PHONY: clean
-clean: $(addsuffix /clean, $(BUILD_DIRS))
-
-$(addsuffix /clean, $(BUILD_DIRS)):
-	$(MAKE) -C $(dir $@) clean
-"""
-
-    with open(os.path.join(BUILD_ROOT, "Makefile"), mode="w", encoding="utf-8") as file:
-        file.write(makefile_contents)
-
-    make_args = [shutil.which("make")]
-
-    if NUM_JOBS is not None:
-        make_args.append(f"-j{NUM_JOBS}")
-
-    subprocess.run(make_args, cwd=BUILD_ROOT, check=True)
-    return
-
 def build_with_driver_ninja_file(build_variants):
     """Write the main driving ninja.build that users will use for building the project"""
 
@@ -673,6 +640,8 @@ def build_with_driver_ninja_file(build_variants):
         file.write("default all")
         file.write("\n")
 
+    assert NINJA_PATH is not None
+
     ninja_cmd = [NINJA_PATH]
     if NUM_JOBS is not None:
         ninja_cmd.append(f"-j{NUM_JOBS}")
@@ -683,17 +652,7 @@ def build_with_driver_ninja_file(build_variants):
 def run_tests():
     """Execute the tests via ctest"""
 
-    make_cmd = [shutil.which("make")]
-
-    if NUM_JOBS is not None:
-        make_cmd.append(f"-j{NUM_JOBS}")
-
-    make_cmd.append('test')
-
-    if CTESTFLAGS is not None:
-        make_cmd.append(f"ARGS=\"{CTESTFLAGS}\"")
-
-    subprocess.run(make_cmd, cwd=BUILD_ROOT, check=True)
+    raise NotImplementedError()
 
 def setup_cmake():
     """Ensure the user has given us a path to CMake or we can find it."""
