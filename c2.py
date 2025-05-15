@@ -292,14 +292,14 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
             if line.startswith('INCLUDE='):
                 includes = line.split('=')
                 includes = includes[1].split(';')
-                includes = [f'-IC:"{include.replace('C:', '')}"' for include in includes]
+                includes = [f'-I"{include}"' for include in includes]
 
                 p['include'] = includes
 
             if line.startswith('LIB='):
                 libs = line.split('=')
                 libs = libs[1].split(';')
-                libs = [f'/LIBPATH:"{lib.replace('C:', '')}"' for lib in libs]
+                libs = [f'/LIBPATH:"{lib}"' for lib in libs]
                 p['libpath'] = libs
 
         print('----------------------------------------')
