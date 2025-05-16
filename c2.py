@@ -127,16 +127,23 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
             if is_windows():
                 toolchain = msvc_toolset
 
+                cl = toolchain['cl']
+                cxx = cl
+                if cxx.endswith('clang++.exe'):
+                    cc = cxx.replace('clang++.exe', 'clang.exe')
+                else:
+                    cc = cxx
+
                 file.writelines([
-                    f'set(CMAKE_C_COMPILER "{toolchain['cl']}")\n',
-                    f'set(CMAKE_CXX_COMPILER "{toolchain['cl']}")\n',
+                    f'set(CMAKE_C_COMPILER "{cc}")\n',
+                    f'set(CMAKE_CXX_COMPILER "{cxx}")\n',
                     f'set(CMAKE_RC_COMPILER "{toolchain['rc']}")\n',
                     f'set(CMAKE_MT "{toolchain['mt']}")\n',
                 ])
 
                 # only cl.exe is deficient in that it requires being manually told where the stdlib header are
                 # clang-cl seems perfectly capable of locating the headers on its own
-                if build_variant.toolset != 'clang-win':
+                if not build_variant.toolset in ['clang-win', 'clang']:
                     libpaths = ' '.join([f'/LIBPATH:"{libpath}"' for libpath in toolchain['libpath']]).replace('\\', '\\\\').replace('"', '\\"')
                     include_dirs = toolchain['include']
                     file.writelines([
@@ -182,7 +189,8 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         if is_windows():
             assert toolchain is not None
             cxxflags = []
-            cxxflags.append('/bigobj')
+            if build_variant.toolset.startswith('msvc-') or build_variant.toolset == 'clang-win':
+                cxxflags.append('/bigobj')
         else:
             cxxflags = []
 
@@ -247,7 +255,7 @@ def launch_cmake_configure(build_variant: BuildVariant, toolsets):
         # with correct flags
         os.remove(cmake_cache_path)
 
-    if is_windows() and build_variant.toolset.startswith('msvc-') or build_variant.toolset == 'clang-win':
+    if is_windows() and build_variant.toolset.startswith('msvc-') or build_variant.toolset in ['clang-win', 'clang']:
         if build_variant.address_model == '32':
             arch = 'x86'
         else:
@@ -273,7 +281,7 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
 
     filename = f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt'
 
-    if msvc_toolset == 'clang-win':
+    if msvc_toolset in ['clang-win', 'clang']:
         vcvars_ver = None
     else:
         vcvars_ver = msvc_toolset
@@ -304,10 +312,13 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
 
         p = toolsets[msvc_toolset][arch]
         for line in text:
-            if msvc_toolset != 'clang-win' and line.endswith('cl.exe') and p.get('cl') is None:
+            if not msvc_toolset in ['clang-win', 'clang'] and line.endswith('cl.exe') and p.get('cl') is None:
                 p['cl'] = line.replace('\\', '/')
 
-            if line.endswith('clang-cl.exe') and p.get('cl') is None:
+            if msvc_toolset == 'clang-win' and line.endswith('clang-cl.exe') and p.get('cl') is None:
+                p['cl'] = line.replace('\\', '/')
+
+            if msvc_toolset == 'clang' and line.endswith('clang++.exe') and p.get('cl') is None:
                 p['cl'] = line.replace('\\', '/')
 
             if line.endswith('rc.exe') and p.get('rc') is None:

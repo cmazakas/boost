@@ -17,6 +17,8 @@ if "%vc_version%" NEQ "" (
 
 where cl > %outname%
 where clang-cl >> %outname%
+where clang >> %outname%
+where clang++ >> %outname%
 where rc >> %outname%
 where mt >> %outname%
 set LIB >> %outname%
