@@ -126,15 +126,30 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         if build_variant.toolset is not None:
             if is_windows():
                 toolchain = msvc_toolset
-                libpaths = ' '.join(toolchain['libpath']).replace('\\', '\\\\').replace('"', '\\"')
+
                 file.writelines([
-                    f'set(CMAKE_EXE_LINKER_FLAGS_INIT "{libpaths}")\n',
-                    f'set(CMAKE_SHARED_LINKER_FLAGS_INIT "{libpaths}")\n',
                     f'set(CMAKE_C_COMPILER "{toolchain['cl']}")\n',
                     f'set(CMAKE_CXX_COMPILER "{toolchain['cl']}")\n',
                     f'set(CMAKE_RC_COMPILER "{toolchain['rc']}")\n',
                     f'set(CMAKE_MT "{toolchain['mt']}")\n',
                 ])
+
+                # only cl.exe is deficient in that it requires being manually told where the stdlib header are
+                # clang-cl seems perfectly capable of locating the headers on its own
+                if build_variant.toolset != 'clang-win':
+                    libpaths = ' '.join([f'/LIBPATH:"{libpath}"' for libpath in toolchain['libpath']]).replace('\\', '\\\\').replace('"', '\\"')
+                    include_dirs = toolchain['include']
+                    file.writelines([
+                        f'set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES "{';'.join(include_dirs).replace('\\', '\\\\')}")\n',
+                        f'set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES "{';'.join(include_dirs).replace('\\', '\\\\')}")\n',
+                        f'set(CMAKE_EXE_LINKER_FLAGS_INIT "{libpaths}")\n',
+                        f'set(CMAKE_SHARED_LINKER_FLAGS_INIT "{libpaths}")\n',
+                        # TODO: someday see if we can it to work this way
+                        # it seems like CMake creates on giant -LIBPATH:<path> that exceeds the 256 byte maximum
+                        #
+                        # f'set(CMAKE_C_STANDARD_LINK_DIRECTORIES "{':'.join(libpaths).replace('\\', '\\\\')}")\n',
+                        # f'set(CMAKE_CXX_STANDARD_LINK_DIRECTORIES "{':'.join(libpaths).replace('\\', '\\\\')}")\n',
+                    ])
             else:
                 toolchain = None
                 cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
@@ -166,7 +181,7 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
 
         if is_windows():
             assert toolchain is not None
-            cxxflags = toolchain["include"].copy()
+            cxxflags = []
             cxxflags.append('/bigobj')
         else:
             cxxflags = []
@@ -259,13 +274,16 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
     filename = f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt'
 
     if msvc_toolset == 'clang-win':
-        vcvars_ver = ''
+        vcvars_ver = None
     else:
         vcvars_ver = msvc_toolset
 
-    get_vcvars_cmd = ['get_vcvars.bat', filename, arch, vcvars_ver]
+    get_vcvars_cmd = ['get_vcvars.bat', f'-out={filename}', arch]
     if WINSDK_VERSION is not None:
         get_vcvars_cmd.append(WINSDK_VERSION)
+
+    if vcvars_ver is not None:
+        get_vcvars_cmd.append(f'-vcvars_ver={vcvars_ver}')
 
     print(f'going to run vcvars cmd: {' '.join(get_vcvars_cmd)}')
 
@@ -300,15 +318,15 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
 
             if line.startswith('INCLUDE='):
                 includes = line.split('=')
-                includes = includes[1].split(';')
-                includes = [f'-I"{include}"' for include in includes]
+                include_paths = includes[1].split(';')
+                includes = []
+                includes += include_paths
 
                 p['include'] = includes
 
             if line.startswith('LIB='):
                 libs = line.split('=')
                 libs = libs[1].split(';')
-                libs = [f'/LIBPATH:"{lib}"' for lib in libs]
                 p['libpath'] = libs
 
         print('----------------------------------------')
