@@ -143,7 +143,7 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
 
                 # only cl.exe is deficient in that it requires being manually told where the stdlib header are
                 # clang-cl seems perfectly capable of locating the headers on its own
-                if not build_variant.toolset in ['clang-win', 'clang']:
+                if not build_variant.toolset in ['clang']:
                     libpaths = ' '.join([f'/LIBPATH:"{libpath}"' for libpath in toolchain['libpath']]).replace('\\', '\\\\').replace('"', '\\"')
                     include_dirs = toolchain['include']
                     file.writelines([
