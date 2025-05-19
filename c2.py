@@ -14,7 +14,7 @@ import pprint
 
 num_cores = os.cpu_count()
 
-BUILD_ROOT = "build_c2py"
+BUILD_ROOT = os.path.abspath("build_c2py")
 CMAKE_PATH: str | None = None
 NINJA_PATH: str | None = None
 COMMAND_MODE: str | None = None
@@ -113,6 +113,7 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
             f'-DCMAKE_MAKE_PROGRAM={NINJA_PATH}',
             f'-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}',
             '-DCMAKE_SUPPRESS_REGENERATION=ON',
+            f'-DC2_BUILD_ROOT={BUILD_ROOT}',
             f'-DCMAKE_TOOLCHAIN_FILE={toolchain_file}',
         ]
 
