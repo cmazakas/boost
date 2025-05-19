@@ -200,9 +200,13 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
 
         if ASAN:
             if is_windows():
-                raise NotImplementedError()
-
-            cxxflags.append('-fsanitize=address')
+                if build_variant.toolset == 'clang':
+                    file.write('set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")\n')
+                    cxxflags.append('-fsanitize=address')
+                else:
+                    raise NotImplementedError()
+            else:
+                cxxflags.append('-fsanitize=address')
 
         if UBSAN:
             if is_windows():
