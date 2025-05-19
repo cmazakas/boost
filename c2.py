@@ -201,8 +201,12 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         if ASAN:
             if is_windows():
                 if build_variant.toolset == 'clang':
+                    # TODO: see if we can someday remove this
                     file.write('set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")\n')
                     cxxflags.append('-fsanitize=address')
+                elif build_variant.toolset.startswith('msvc-'):
+                    cxxflags.append('/fsanitize=address')
+                    cxxflags.append('/Zi')
                 else:
                     raise NotImplementedError()
             else:
@@ -210,9 +214,17 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
 
         if UBSAN:
             if is_windows():
-                raise NotImplementedError()
+                if not ASAN:
+                    file.write('set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")\n')
 
-            cxxflags.append('-fsanitize=undefined')
+                if build_variant.toolset == 'clang':
+                    cxxflags.append('-fsanitize=undefined')
+                elif build_variant.toolset.startswith('msvc-'):
+                    raise ValueError("cl.exe does not support ubsan, only asan is supported")
+                else:
+                    raise NotImplementedError()
+            else:
+                cxxflags.append('-fsanitize=undefined')
 
         if len(cxxflags) > 0 or CXXFLAGS is not None:
             init_flags = ' '.join(cxxflags)
