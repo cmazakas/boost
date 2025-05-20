@@ -714,7 +714,7 @@ def run_tests():
 
     assert CMAKE_PATH is not None
     cmake_bin_dir = os.path.dirname(CMAKE_PATH)
-    ctest_cmd = [os.path.join(cmake_bin_dir, 'ctest'), '-j', '--output-on-failure']
+    ctest_cmd = [os.path.join(cmake_bin_dir, 'ctest'), '-j', '--output-on-failure', '--no-tests=error']
 
     subprocess.run(ctest_cmd, cwd=BUILD_ROOT, check=True)
 
