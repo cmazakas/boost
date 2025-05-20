@@ -121,8 +121,6 @@ def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: st
         file.writelines([
             'set(BUILD_TESTING ON)\n',
             'set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n',
-            'set(CMAKE_CXX_VISIBILITY_PRESET hidden)\n',
-            'set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)\n',
         ])
 
         if build_variant.toolset is not None:
