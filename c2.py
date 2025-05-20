@@ -271,11 +271,16 @@ def launch_cmake_configure(build_variant: BuildVariant, toolsets):
         # with correct flags
         os.remove(cmake_cache_path)
 
-    if is_windows() and build_variant.toolset.startswith('msvc-') or build_variant.toolset in ['clang-win', 'clang']:
-        if build_variant.address_model == '32':
-            arch = 'x86'
+    if is_windows():
+        assert build_variant.toolset is not None
+
+        if build_variant.toolset.startswith('msvc-') or build_variant.toolset in ['clang-win', 'clang']:
+            if build_variant.address_model == '32':
+                arch = 'x86'
+            else:
+                arch = 'amd64'
         else:
-            arch = 'amd64'
+            raise ValueError(f'invalid toolset specified: "{build_variant.toolset}"')
 
         toolset = toolsets[build_variant.toolset.replace('msvc-', '')][arch]
     else:
@@ -366,24 +371,25 @@ def configure_boost(build_variants: list[BuildVariant]):
         print("skipping CMake configuration step")
         return
 
-    msvc_toolsets = list(set([build_variant.toolset.replace('msvc-', '') for build_variant in build_variants]))
-
-    has_32_bit = any(build_variant.address_model == '32' for build_variant in build_variants)
-    has_64_bit = any(build_variant.address_model == '64' or build_variant.address_model is None for build_variant in build_variants)
-
     toolsets = {}
-    for msvc_toolset in msvc_toolsets:
-        print(f'gathering toolset info for msvc-{msvc_toolset}')
-        if has_32_bit:
-            arch = 'x86'
-            generate_msvc_toolset(arch, msvc_toolset, toolsets)
+    if is_windows():
+        msvc_toolsets = list(set([build_variant.toolset.replace('msvc-', '') for build_variant in build_variants]))
 
-        if has_64_bit:
-            arch = 'amd64'
-            generate_msvc_toolset(arch, msvc_toolset, toolsets)
+        has_32_bit = any(build_variant.address_model == '32' for build_variant in build_variants)
+        has_64_bit = any(build_variant.address_model == '64' or build_variant.address_model is None for build_variant in build_variants)
 
-    print('built the following toolsets for msvc')
-    pprint.pprint(toolsets, width=256)
+        for msvc_toolset in msvc_toolsets:
+            print(f'gathering toolset info for msvc-{msvc_toolset}')
+            if has_32_bit:
+                arch = 'x86'
+                generate_msvc_toolset(arch, msvc_toolset, toolsets)
+
+            if has_64_bit:
+                arch = 'amd64'
+                generate_msvc_toolset(arch, msvc_toolset, toolsets)
+
+        print('built the following toolsets for msvc')
+        pprint.pprint(toolsets, width=256)
 
     cmake_config_procs = []
     for idx, build_variant in enumerate(build_variants):
