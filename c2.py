@@ -700,10 +700,24 @@ def build_with_driver_ninja_file(build_variants):
     subprocess.run(ninja_cmd, cwd=BUILD_ROOT, check=True)
     return
 
-def run_tests():
-    """Execute the tests via ctest"""
+def build_ctest_testfile(build_variants):
+    """Write the main CTestTestfile.cmake that will be responsible for building the global test list for ctest"""
 
-    raise NotImplementedError()
+    build_dir_fragments = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
+
+    with open(os.path.join(BUILD_ROOT, "CTestTestfile.cmake"), mode='w', encoding='utf-8') as file:
+        file.writelines('\n'.join([f'subdirs("{fragment}")' for fragment in build_dir_fragments]))
+        file.write('\n')
+
+def run_tests():
+    """Execute CTest on the generated CTestTestile.cmake"""
+
+    assert CMAKE_PATH is not None
+    cmake_bin_dir = os.path.dirname(CMAKE_PATH)
+    ctest_cmd = [os.path.join(cmake_bin_dir, 'ctest'), '-j', '--output-on-failure']
+
+    subprocess.run(ctest_cmd, cwd=BUILD_ROOT, check=True)
+
 
 def setup_cmake():
     """Ensure the user has given us a path to CMake or we can find it."""
@@ -740,6 +754,10 @@ def init():
 
     configure_boost(build_variants)
     build_with_driver_ninja_file(build_variants)
+    build_ctest_testfile(build_variants)
+
+    if COMMAND_MODE == 'test':
+        run_tests()
 
 if __name__ == "__main__":
     init()
