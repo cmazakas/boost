@@ -13,3 +13,4 @@
 /.settings/
 /.project
 /.pydevproject
+/build_c2py/
