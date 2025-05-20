@@ -62,7 +62,8 @@ def build_variant_to_build_dir_fragment(build_variant: BuildVariant):
             build_dir += "_x86"
 
     if build_variant.link is not None:
-        build_dir += f"_{build_variant.link}"
+        if build_variant.link == 'shared':
+            build_dir += f"_{build_variant.link}"
 
     return build_dir
 
