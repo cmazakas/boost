@@ -318,10 +318,11 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
 
     subprocess.run(
         get_vcvars_cmd,
+        cwd=BUILD_ROOT,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, check=True)
 
-    with open(filename, mode="r", encoding="utf-8") as file:
+    with open(os.path.join(BUILD_ROOT, filename), mode="r", encoding="utf-8") as file:
         text = file.read().splitlines()
         print(text)
 
