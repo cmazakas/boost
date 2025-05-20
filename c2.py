@@ -300,7 +300,7 @@ def launch_cmake_configure(build_variant: BuildVariant, toolsets):
 def generate_msvc_toolset(arch, msvc_toolset, toolsets):
     """Runs a batch-local version of vcvarsall with the appropriate args to probe for all required paths to build a working toolchain"""
 
-    filename = f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt'
+    filename = os.path.join(BUILD_ROOT, f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt')
 
     if msvc_toolset in ['clang-win', 'clang']:
         vcvars_ver = None
@@ -318,11 +318,10 @@ def generate_msvc_toolset(arch, msvc_toolset, toolsets):
 
     subprocess.run(
         get_vcvars_cmd,
-        cwd=BUILD_ROOT,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, check=True)
 
-    with open(os.path.join(BUILD_ROOT, filename), mode="r", encoding="utf-8") as file:
+    with open(filename, mode="r", encoding="utf-8") as file:
         text = file.read().splitlines()
         print(text)
 
@@ -753,6 +752,7 @@ def init():
     setup_cmake()
     setup_ninja()
 
+    os.makedirs(BUILD_ROOT, exist_ok=True)
     configure_boost(build_variants)
     build_with_driver_ninja_file(build_variants)
     build_ctest_testfile(build_variants)
