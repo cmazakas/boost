@@ -45,7 +45,7 @@ def is_windows():
 def build_variant_to_build_dir_fragment(build_variant: BuildVariant):
     """A detail function intended to build the tree fragment"""
 
-    build_dir = f"build_{LIBRARY}"
+    build_dir = f"boost_{LIBRARY}"
     if build_variant.toolset is not None:
         build_dir += f"_{build_variant.toolset}"
 
