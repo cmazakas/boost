@@ -713,8 +713,16 @@ def run_tests():
     """Execute CTest on the generated CTestTestile.cmake"""
 
     assert CMAKE_PATH is not None
+
     cmake_bin_dir = os.path.dirname(CMAKE_PATH)
-    ctest_cmd = [os.path.join(cmake_bin_dir, 'ctest'), '-j', '--output-on-failure', '--no-tests=error']
+    ctest_cmd = [
+        os.path.join(cmake_bin_dir, 'ctest'),
+        '--parallel',
+        '--output-on-failure',
+        '--no-tests=error',
+        '--stop-on-failure',
+        '--schedule-random',
+    ]
 
     subprocess.run(ctest_cmd, cwd=BUILD_ROOT, check=True)
 
