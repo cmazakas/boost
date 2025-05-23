@@ -28,6 +28,7 @@ CXXFLAGS: str | None = None
 CTESTFLAGS: str | None = None
 WINSDK_VERSION: str | None = None
 
+
 @dataclasses.dataclass
 class BuildVariant:
     """Represents a CMake-based build"""
@@ -38,9 +39,11 @@ class BuildVariant:
     cxxstd: str | None = None
     link: str | None = None
 
+
 def is_windows():
     """Helper used to determine if we're running on Windows or not-Windows"""
-    return os.name == 'nt'
+    return os.name == "nt"
+
 
 def build_variant_to_build_dir_fragment(build_variant: BuildVariant):
     """A detail function intended to build the tree fragment"""
@@ -53,16 +56,16 @@ def build_variant_to_build_dir_fragment(build_variant: BuildVariant):
         build_dir += f"_std{build_variant.cxxstd}"
 
     if build_variant.variant is not None:
-        if build_variant.variant == 'release':
+        if build_variant.variant == "release":
             build_dir += f"_{build_variant.variant}"
 
     addr = build_variant.address_model
     if addr is not None:
-        if addr == '32':
+        if addr == "32":
             build_dir += "_x86"
 
     if build_variant.link is not None:
-        if build_variant.link == 'shared':
+        if build_variant.link == "shared":
             build_dir += f"_{build_variant.link}"
 
     return build_dir
@@ -73,6 +76,7 @@ def build_variant_to_build_dir(build_variant: BuildVariant):
 
     fragment = build_variant_to_build_dir_fragment(build_variant)
     return os.path.join(BUILD_ROOT, fragment)
+
 
 def toolset_to_cxx_compiler(toolset):
     """Used to map toolsetes to something CMake can understand"""
@@ -85,6 +89,7 @@ def toolset_to_cxx_compiler(toolset):
 
     return None
 
+
 def variant_to_build_type(variant):
     """Transforms a variant to something CMake understands"""
 
@@ -96,158 +101,193 @@ def variant_to_build_type(variant):
 
     return None
 
-def build_variant_to_cmake_config_cmd(build_variant: BuildVariant, build_dir: str, msvc_toolset):
+
+def build_variant_to_cmake_config_cmd(
+    build_variant: BuildVariant, build_dir: str, msvc_toolset
+):
     """Programmatically generate the proper arguments to pass to CMake's configure phase"""
 
     fragment = build_variant_to_build_dir_fragment(build_variant)
 
     os.makedirs(build_dir, exist_ok=True)
-    toolchain_file = os.path.join(build_dir, 'toolchain.cmake')
+    toolchain_file = os.path.join(build_dir, "toolchain.cmake")
 
-    with open(toolchain_file, 'w', encoding='utf-8') as file:
+    with open(toolchain_file, "w", encoding="utf-8") as file:
         config_args = [
             CMAKE_PATH,
-            "-S", ".",
-            "-B", build_dir,
-            "-G", "Ninja",
-            f'-DBOOST_INCLUDE_LIBRARIES={LIBRARY}',
-            f'-DCMAKE_MAKE_PROGRAM={NINJA_PATH}',
-            f'-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}',
-            '-DCMAKE_SUPPRESS_REGENERATION=ON',
-            f'-DC2_BUILD_ROOT={BUILD_ROOT}',
-            f'-DCMAKE_TOOLCHAIN_FILE={toolchain_file}',
+            "-S",
+            ".",
+            "-B",
+            build_dir,
+            "-G",
+            "Ninja",
+            f"-DBOOST_INCLUDE_LIBRARIES={LIBRARY}",
+            f"-DCMAKE_MAKE_PROGRAM={NINJA_PATH}",
+            f"-DCMAKE_NINJA_OUTPUT_PATH_PREFIX={fragment}",
+            "-DCMAKE_SUPPRESS_REGENERATION=ON",
+            f"-DC2_BUILD_ROOT={BUILD_ROOT}",
+            f"-DCMAKE_TOOLCHAIN_FILE={toolchain_file}",
         ]
 
-        file.writelines([
-            'set(BUILD_TESTING ON)\n',
-            'set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n',
-        ])
+        file.writelines(
+            [
+                "set(BUILD_TESTING ON)\n",
+                "set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n",
+            ]
+        )
 
         if build_variant.toolset is not None:
             if is_windows():
                 toolchain = msvc_toolset
 
-                cl = toolchain['cl']
+                cl = toolchain["cl"]
                 cxx = cl
-                if cxx.endswith('clang++.exe'):
-                    cc = cxx.replace('clang++.exe', 'clang.exe')
+                if cxx.endswith("clang++.exe"):
+                    cc = cxx.replace("clang++.exe", "clang.exe")
                 else:
                     cc = cxx
 
-                file.writelines([
-                    f'set(CMAKE_C_COMPILER "{cc}")\n',
-                    f'set(CMAKE_CXX_COMPILER "{cxx}")\n',
-                    f'set(CMAKE_RC_COMPILER "{toolchain['rc']}")\n',
-                    f'set(CMAKE_MT "{toolchain['mt']}")\n',
-                ])
+                file.writelines(
+                    [
+                        f'set(CMAKE_C_COMPILER "{cc}")\n',
+                        f'set(CMAKE_CXX_COMPILER "{cxx}")\n',
+                        f'set(CMAKE_RC_COMPILER "{toolchain['rc']}")\n',
+                        f'set(CMAKE_MT "{toolchain['mt']}")\n',
+                    ]
+                )
 
                 # only cl.exe is deficient in that it requires being manually told where the stdlib header are
                 # clang-cl seems perfectly capable of locating the headers on its own
-                if not build_variant.toolset in ['clang']:
-                    libpaths = ' '.join([f'/LIBPATH:"{libpath}"' for libpath in toolchain['libpath']]).replace('\\', '\\\\').replace('"', '\\"')
-                    include_dirs = toolchain['include']
-                    file.writelines([
-                        f'set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES "{';'.join(include_dirs).replace('\\', '\\\\')}")\n',
-                        f'set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES "{';'.join(include_dirs).replace('\\', '\\\\')}")\n',
-                        f'set(CMAKE_EXE_LINKER_FLAGS_INIT "{libpaths}")\n',
-                        f'set(CMAKE_SHARED_LINKER_FLAGS_INIT "{libpaths}")\n',
-                        # TODO: someday see if we can it to work this way
-                        # it seems like CMake creates on giant -LIBPATH:<path> that exceeds the 256 byte maximum
-                        #
-                        # f'set(CMAKE_C_STANDARD_LINK_DIRECTORIES "{':'.join(libpaths).replace('\\', '\\\\')}")\n',
-                        # f'set(CMAKE_CXX_STANDARD_LINK_DIRECTORIES "{':'.join(libpaths).replace('\\', '\\\\')}")\n',
-                    ])
+                if not build_variant.toolset in ["clang"]:
+                    libpaths = (
+                        " ".join(
+                            [
+                                f'/LIBPATH:"{libpath}"'
+                                for libpath in toolchain["libpath"]
+                            ]
+                        )
+                        .replace("\\", "\\\\")
+                        .replace('"', '\\"')
+                    )
+                    include_dirs = toolchain["include"]
+                    file.writelines(
+                        [
+                            f'set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES "{';'.join(include_dirs).replace('\\', '\\\\')}")\n',
+                            f'set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES "{';'.join(include_dirs).replace('\\', '\\\\')}")\n',
+                            f'set(CMAKE_EXE_LINKER_FLAGS_INIT "{libpaths}")\n',
+                            f'set(CMAKE_SHARED_LINKER_FLAGS_INIT "{libpaths}")\n',
+                            # TODO: someday see if we can it to work this way
+                            # it seems like CMake creates on giant -LIBPATH:<path> that exceeds the 256 byte maximum
+                            #
+                            # f'set(CMAKE_C_STANDARD_LINK_DIRECTORIES "{':'.join(libpaths).replace('\\', '\\\\')}")\n',
+                            # f'set(CMAKE_CXX_STANDARD_LINK_DIRECTORIES "{':'.join(libpaths).replace('\\', '\\\\')}")\n',
+                        ]
+                    )
             else:
                 toolchain = None
                 cxx_compiler = toolset_to_cxx_compiler(build_variant.toolset)
-                file.writelines([
-                    f'set(CMAKE_C_COMPILER "{build_variant.toolset}")\n',
-                    f'set(CMAKE_CXX_COMPILER "{cxx_compiler}")\n',
-                ])
+                file.writelines(
+                    [
+                        f'set(CMAKE_C_COMPILER "{build_variant.toolset}")\n',
+                        f'set(CMAKE_CXX_COMPILER "{cxx_compiler}")\n',
+                    ]
+                )
         else:
             raise ValueError("a toolset must be specified")
 
         if build_variant.variant is not None:
             build_type = variant_to_build_type(build_variant.variant)
-            file.write(f'set(CMAKE_BUILD_TYPE {build_type})\n')
+            file.write(f"set(CMAKE_BUILD_TYPE {build_type})\n")
         else:
             file.write("set(CMAKE_BUILD_TYPE Debug)\n")
 
         if build_variant.cxxstd is not None:
             cxxstd = build_variant.cxxstd
-            file.write(f'set(CMAKE_CXX_STANDARD {cxxstd})\n')
+            file.write(f"set(CMAKE_CXX_STANDARD {cxxstd})\n")
 
-        if build_variant.link == 'shared':
-            file.write('set(BUILD_SHARED_LIBS ON)\n')
-        elif build_variant.link == 'static':
+        if build_variant.link == "shared":
+            file.write("set(BUILD_SHARED_LIBS ON)\n")
+        elif build_variant.link == "static":
             file.write("set(BUILD_SHARED_LIBS OFF)\n")
         elif build_variant.link is not None:
-            raise ValueError(f"invalid link type value {build_variant.link}. Should be static or shared")
+            raise ValueError(
+                f"invalid link type value {build_variant.link}. Should be static or shared"
+            )
         else:
             file.write("set(BUILD_SHARED_LIBS OFF)\n")
 
         if is_windows():
             assert toolchain is not None
             cxxflags = []
-            if build_variant.toolset.startswith('msvc-') or build_variant.toolset == 'clang-win':
-                cxxflags.append('/bigobj')
+            if (
+                build_variant.toolset.startswith("msvc-")
+                or build_variant.toolset == "clang-win"
+            ):
+                cxxflags.append("/bigobj")
         else:
             cxxflags = []
 
-        if build_variant.address_model == '32':
+        if build_variant.address_model == "32":
             if not is_windows():
-                cxxflags.append('-m32')
+                cxxflags.append("-m32")
 
         if ASAN:
             if is_windows():
-                if build_variant.toolset == 'clang':
+                if build_variant.toolset == "clang":
                     # TODO: see if we can someday remove this
                     file.write('set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")\n')
-                    cxxflags.append('-fsanitize=address')
-                elif build_variant.toolset.startswith('msvc-'):
-                    cxxflags.append('/fsanitize=address')
-                    cxxflags.append('/Zi')
+                    cxxflags.append("-fsanitize=address")
+                elif build_variant.toolset.startswith("msvc-"):
+                    cxxflags.append("/fsanitize=address")
+                    cxxflags.append("/Zi")
                 else:
                     raise NotImplementedError()
             else:
-                cxxflags.append('-fsanitize=address')
+                cxxflags.append("-fsanitize=address")
 
         if UBSAN:
             if is_windows():
                 if not ASAN:
                     file.write('set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")\n')
 
-                if build_variant.toolset == 'clang':
-                    cxxflags.append('-fsanitize=undefined')
-                elif build_variant.toolset.startswith('msvc-'):
-                    raise ValueError("cl.exe does not support ubsan, only asan is supported")
+                if build_variant.toolset == "clang":
+                    cxxflags.append("-fsanitize=undefined")
+                elif build_variant.toolset.startswith("msvc-"):
+                    raise ValueError(
+                        "cl.exe does not support ubsan, only asan is supported"
+                    )
                 else:
                     raise NotImplementedError()
             else:
-                cxxflags.append('-fsanitize=undefined')
+                cxxflags.append("-fsanitize=undefined")
 
         if len(cxxflags) > 0 or CXXFLAGS is not None:
-            init_flags = ' '.join(cxxflags)
+            init_flags = " ".join(cxxflags)
             if CXXFLAGS is not None:
                 init_flags += CXXFLAGS
 
             if is_windows():
-                init_flags = init_flags.replace('\\', '\\\\').replace('"', '\\"')
+                init_flags = init_flags.replace("\\", "\\\\").replace('"', '\\"')
 
-            file.writelines([
-                f'set(CMAKE_CXX_FLAGS_INIT "{init_flags}")\n',
-                f'set(CMAKE_C_FLAGS_INIT "{init_flags}")\n',
-            ])
+            file.writelines(
+                [
+                    f'set(CMAKE_CXX_FLAGS_INIT "{init_flags}")\n',
+                    f'set(CMAKE_C_FLAGS_INIT "{init_flags}")\n',
+                ]
+            )
 
     return config_args
+
 
 def build_variant_to_cmake_build_args(build_variant: BuildVariant, build_dir: str):
     """Programmatically generate the proper arguments to pass to CMake's build phase"""
 
     build_args = [
         CMAKE_PATH,
-        "--build", build_dir,
-        "--target", "tests",
+        "--build",
+        build_dir,
+        "--target",
+        "tests",
     ]
 
     if NUM_JOBS:
@@ -261,8 +301,9 @@ def build_variant_to_cmake_build_args(build_variant: BuildVariant, build_dir: st
 
     return build_args
 
+
 def launch_cmake_configure(build_variant: BuildVariant, toolsets):
-    """"Launches a child CMake processes that begins configuring for the given build variant"""
+    """ "Launches a child CMake processes that begins configuring for the given build variant"""
 
     build_dir = build_variant_to_build_dir(build_variant)
     cmake_cache_path = os.path.join(build_dir, "CMakeCache.txt")
@@ -274,95 +315,117 @@ def launch_cmake_configure(build_variant: BuildVariant, toolsets):
     if is_windows():
         assert build_variant.toolset is not None
 
-        if build_variant.toolset.startswith('msvc-') or build_variant.toolset in ['clang-win', 'clang']:
-            if build_variant.address_model == '32':
-                arch = 'x86'
+        if build_variant.toolset.startswith("msvc-") or build_variant.toolset in [
+            "clang-win",
+            "clang",
+        ]:
+            if build_variant.address_model == "32":
+                arch = "x86"
             else:
-                arch = 'amd64'
+                arch = "amd64"
         else:
             raise ValueError(f'invalid toolset specified: "{build_variant.toolset}"')
 
-        toolset = toolsets[build_variant.toolset.replace('msvc-', '')][arch]
+        toolset = toolsets[build_variant.toolset.replace("msvc-", "")][arch]
     else:
         toolset = None
 
-    cmake_config_cmd = build_variant_to_cmake_config_cmd(build_variant, build_dir, toolset)
+    cmake_config_cmd = build_variant_to_cmake_config_cmd(
+        build_variant, build_dir, toolset
+    )
 
     print("cmake configuration command is:")
-    print(' '.join(cmake_config_cmd))
-    print('--------------------------------------------------------------------')
+    print(" ".join(cmake_config_cmd))
+    print("--------------------------------------------------------------------")
 
     process = subprocess.Popen(
-        cmake_config_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        cmake_config_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
 
     return process
+
 
 def generate_msvc_toolset(arch, msvc_toolset, toolsets):
     """Runs a batch-local version of vcvarsall with the appropriate args to probe for all required paths to build a working toolchain"""
 
-    filename = os.path.join(BUILD_ROOT, f'vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt')
+    filename = os.path.join(
+        BUILD_ROOT, f"vcvars_env_{arch}_{msvc_toolset.replace('.', '')}.txt"
+    )
 
-    if msvc_toolset in ['clang-win', 'clang']:
+    if msvc_toolset in ["clang-win", "clang"]:
         vcvars_ver = None
     else:
         vcvars_ver = msvc_toolset
 
-    get_vcvars_cmd = ['get_vcvars.bat', f'-out={filename}', arch]
+    get_vcvars_cmd = ["get_vcvars.bat", f"-out={filename}", arch]
     if WINSDK_VERSION is not None:
         get_vcvars_cmd.append(WINSDK_VERSION)
 
     if vcvars_ver is not None:
-        get_vcvars_cmd.append(f'-vcvars_ver={vcvars_ver}')
+        get_vcvars_cmd.append(f"-vcvars_ver={vcvars_ver}")
 
-    print(f'going to run vcvars cmd: {' '.join(get_vcvars_cmd)}')
+    print(f"going to run vcvars cmd: {' '.join(get_vcvars_cmd)}")
 
     subprocess.run(
         get_vcvars_cmd,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, check=True)
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    )
 
     with open(filename, mode="r", encoding="utf-8") as file:
         text = file.read().splitlines()
         print(text)
 
         if toolsets.get(msvc_toolset) is None:
-            toolsets[msvc_toolset] = {
-                'amd64': {},
-                'x86': {}
-            }
+            toolsets[msvc_toolset] = {"amd64": {}, "x86": {}}
 
         p = toolsets[msvc_toolset][arch]
         for line in text:
-            if not msvc_toolset in ['clang-win', 'clang'] and line.endswith('cl.exe') and p.get('cl') is None:
-                p['cl'] = line.replace('\\', '/')
+            if (
+                not msvc_toolset in ["clang-win", "clang"]
+                and line.endswith("cl.exe")
+                and p.get("cl") is None
+            ):
+                p["cl"] = line.replace("\\", "/")
 
-            if msvc_toolset == 'clang-win' and line.endswith('clang-cl.exe') and p.get('cl') is None:
-                p['cl'] = line.replace('\\', '/')
+            if (
+                msvc_toolset == "clang-win"
+                and line.endswith("clang-cl.exe")
+                and p.get("cl") is None
+            ):
+                p["cl"] = line.replace("\\", "/")
 
-            if msvc_toolset == 'clang' and line.endswith('clang++.exe') and p.get('cl') is None:
-                p['cl'] = line.replace('\\', '/')
+            if (
+                msvc_toolset == "clang"
+                and line.endswith("clang++.exe")
+                and p.get("cl") is None
+            ):
+                p["cl"] = line.replace("\\", "/")
 
-            if line.endswith('rc.exe') and p.get('rc') is None:
-                p['rc'] = line.replace('\\', '/')
+            if line.endswith("rc.exe") and p.get("rc") is None:
+                p["rc"] = line.replace("\\", "/")
 
-            if line.endswith('mt.exe') and p.get('mt') is None:
-                p['mt'] = line.replace('\\', '/')
+            if line.endswith("mt.exe") and p.get("mt") is None:
+                p["mt"] = line.replace("\\", "/")
 
-            if line.startswith('INCLUDE='):
-                includes = line.split('=')
-                include_paths = includes[1].split(';')
+            if line.startswith("INCLUDE="):
+                includes = line.split("=")
+                include_paths = includes[1].split(";")
                 includes = []
                 includes += include_paths
 
-                p['include'] = includes
+                p["include"] = includes
 
-            if line.startswith('LIB='):
-                libs = line.split('=')
-                libs = libs[1].split(';')
-                p['libpath'] = libs
+            if line.startswith("LIB="):
+                libs = line.split("=")
+                libs = libs[1].split(";")
+                p["libpath"] = libs
 
-        print('----------------------------------------')
-        print('completed building toolset database file')
+        print("----------------------------------------")
+        print("completed building toolset database file")
+
 
 def configure_boost(build_variants: list[BuildVariant]):
     """Configures the specified Boost libraries in parallel"""
@@ -373,22 +436,34 @@ def configure_boost(build_variants: list[BuildVariant]):
 
     toolsets = {}
     if is_windows():
-        msvc_toolsets = list(set([build_variant.toolset.replace('msvc-', '') for build_variant in build_variants]))
+        msvc_toolsets = list(
+            set(
+                [
+                    build_variant.toolset.replace("msvc-", "")
+                    for build_variant in build_variants
+                ]
+            )
+        )
 
-        has_32_bit = any(build_variant.address_model == '32' for build_variant in build_variants)
-        has_64_bit = any(build_variant.address_model == '64' or build_variant.address_model is None for build_variant in build_variants)
+        has_32_bit = any(
+            build_variant.address_model == "32" for build_variant in build_variants
+        )
+        has_64_bit = any(
+            build_variant.address_model == "64" or build_variant.address_model is None
+            for build_variant in build_variants
+        )
 
         for msvc_toolset in msvc_toolsets:
-            print(f'gathering toolset info for msvc-{msvc_toolset}')
+            print(f"gathering toolset info for msvc-{msvc_toolset}")
             if has_32_bit:
-                arch = 'x86'
+                arch = "x86"
                 generate_msvc_toolset(arch, msvc_toolset, toolsets)
 
             if has_64_bit:
-                arch = 'amd64'
+                arch = "amd64"
                 generate_msvc_toolset(arch, msvc_toolset, toolsets)
 
-        print('built the following toolsets for msvc')
+        print("built the following toolsets for msvc")
         pprint.pprint(toolsets, width=256)
 
     cmake_config_procs = []
@@ -400,7 +475,7 @@ def configure_boost(build_variants: list[BuildVariant]):
     configure_failed = False
 
     # pipes = []
-    outputs = [['', '']] * len(cmake_config_procs)
+    outputs = [["", ""]] * len(cmake_config_procs)
 
     for i, config_proc in enumerate(cmake_config_procs):
         if config_proc.poll() is None:
@@ -434,8 +509,10 @@ def configure_boost(build_variants: list[BuildVariant]):
 
     print("configuration complete")
 
-    print('patching ninja files')
-    builds_dir_fragments = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
+    print("patching ninja files")
+    builds_dir_fragments = [
+        build_variant_to_build_dir_fragment(bv) for bv in build_variants
+    ]
     txt = None
     for fragment in builds_dir_fragments:
         ninja_file = os.path.join(BUILD_ROOT, fragment, "build.ninja")
@@ -445,41 +522,50 @@ def configure_boost(build_variants: list[BuildVariant]):
 
         updated_txt = txt.replace(
             "cmake_object_order_depends_target_boost",
-            f"cmake_object_order_depends_target_boost_{fragment}")
+            f"cmake_object_order_depends_target_boost_{fragment}",
+        )
 
         with open(ninja_file, mode="w", encoding="utf-8") as file:
             file.write(updated_txt)
 
-    print('completed patching ninja')
+    print("completed patching ninja")
+
 
 def parse_args():
     """Parse CLI args and form the build variants array"""
 
-    parser = argparse.ArgumentParser(description="Parse all build options and assemble the matrix.")
+    parser = argparse.ArgumentParser(
+        description="Parse all build options and assemble the matrix."
+    )
 
     parser.add_argument(
         "command",
         type=str,
         help="Main driver command. Either just `build` or `test`. `test` implies `build` but also "
-             "invokes `ctest` for each generated build directory."
+        "invokes `ctest` for each generated build directory.",
     )
 
     parser.add_argument(
-        "library",
+        "library", type=str, help="Name of the library to build tests for."
+    )
+
+    parser.add_argument(
+        "--cmake-path",
         type=str,
-        help="Name of the library to build tests for."
+        help="Path to a working CMake executable.",
+        dest="cmake_path",
     )
 
     parser.add_argument(
-        "--cmake-path", type=str, help="Path to a working CMake executable.",
-        dest="cmake_path")
+        "--ninja-path",
+        type=str,
+        help="Path to a working Ninja executable.",
+        dest="ninja_path",
+    )
 
     parser.add_argument(
-        "--ninja-path", type=str, help="Path to a working Ninja executable.",
-        dest="ninja_path")
-
-    parser.add_argument(
-        "-j", type=int,
+        "-j",
+        type=int,
         dest="jobs",
         help="Number of jobs used to build with CMake.",
     )
@@ -487,45 +573,43 @@ def parse_args():
     parser.add_argument(
         "--cxxstd",
         type=str,
-        help="A comma-separated list of C++ standard versions (e.g., 'cxxstd=11,17,20')."
+        help="A comma-separated list of C++ standard versions (e.g., 'cxxstd=11,17,20').",
     )
 
     parser.add_argument(
         "--toolset",
         type=str,
         help="A comma-separated list of C++ toolchains to use (e.g. toolset=gcc-14,clang-19 "
-             "[no '++' required])"
+        "[no '++' required])",
     )
 
     parser.add_argument(
         "--variant",
         type=str,
         help="A comma-separated list of C++ build types (e.g variant=debug,release or "
-             "variant=release)"
+        "variant=release)",
     )
 
     parser.add_argument(
         "--address-model",
         type=str,
         help="A comma-separated list of architectures (e.g. address-model=32,64)",
-        dest="address_model"
+        dest="address_model",
     )
 
     parser.add_argument(
         "--link",
         type=str,
-        help="A comma-separated list of link models (e.g. link=static,shared)"
+        help="A comma-separated list of link models (e.g. link=static,shared)",
     )
 
     parser.add_argument(
-        "--ubsan",
-        action='store_true',
-        help="Build with -fsanitize=undefined"
+        "--ubsan", action="store_true", help="Build with -fsanitize=undefined"
     )
 
     parser.add_argument(
         "--asan",
-        action='store_true',
+        action="store_true",
         help="Build with -fsanitize=address",
     )
 
@@ -533,26 +617,28 @@ def parse_args():
         "--skip-configure",
         action="store_true",
         help="Skip the CMake configuration step",
-        dest="no_cmake"
+        dest="no_cmake",
     )
 
     parser.add_argument(
         "--cxxflags",
         type=str,
         help="Add custom compiler options that will be added to "
-             "`CMAKE_CXX_FLAGS_INIT` during configure time"
+        "`CMAKE_CXX_FLAGS_INIT` during configure time",
     )
 
     parser.add_argument(
-        '--ctestflags',
+        "--ctestflags",
         type=str,
         help="Additional arguments to be passed to ctest during test running",
     )
 
     parser.add_argument(
-        '--winsdk-version', type=str,
-        dest='winsdk_version',
-        help='Version of the Windows SDK to use (e.g. 10.0.22621.0). Commonly found in: "C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.22621.0"')
+        "--winsdk-version",
+        type=str,
+        dest="winsdk_version",
+        help='Version of the Windows SDK to use (e.g. 10.0.22621.0). Commonly found in: "C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.22621.0"',
+    )
 
     args = parser.parse_args()
 
@@ -564,9 +650,10 @@ def parse_args():
 
     if args.command:
         command = args.command
-        if command not in ('build', 'test'):
-            raise ValueError("The only permitted sub-commands for "
-                             "c2.py are: \"build\" or \"test\".")
+        if command not in ("build", "test"):
+            raise ValueError(
+                "The only permitted sub-commands for " 'c2.py are: "build" or "test".'
+            )
         global COMMAND_MODE
         COMMAND_MODE = command
     else:
@@ -576,7 +663,9 @@ def parse_args():
         global LIBRARY
         LIBRARY = args.library
     else:
-        raise ValueError("Must specify a library to build, such as `hash2` or `unordered`.")
+        raise ValueError(
+            "Must specify a library to build, such as `hash2` or `unordered`."
+        )
 
     if args.cmake_path:
         global CMAKE_PATH
@@ -622,12 +711,16 @@ def parse_args():
         result = args.link.split(",")
 
         if len(result) != len(list(set(result))):
-            raise ValueError("Invalid link value. Should be of the form"
-                             ": --link=static,shared or --link=shared.")
+            raise ValueError(
+                "Invalid link value. Should be of the form"
+                ": --link=static,shared or --link=shared."
+            )
 
         for r in result:
-            if r not in ('static', 'shared'):
-                raise ValueError(f"{r} is an invalid link type, must be static or shared")
+            if r not in ("static", "shared"):
+                raise ValueError(
+                    f"{r} is an invalid link type, must be static or shared"
+                )
 
         links += result
     else:
@@ -665,18 +758,23 @@ def parse_args():
                                 variant=variant,
                                 cxxstd=cxxstd,
                                 address_model=addr,
-                                link=link
+                                link=link,
                             )
                         )
 
     return build_variants
 
+
 def build_with_driver_ninja_file(build_variants):
     """Write the main driving ninja.build that users will use for building the project"""
 
-    builds_dir_fragments = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
+    builds_dir_fragments = [
+        build_variant_to_build_dir_fragment(bv) for bv in build_variants
+    ]
 
-    with open(os.path.join(BUILD_ROOT, "build.ninja"), mode="w", encoding="utf-8") as file:
+    with open(
+        os.path.join(BUILD_ROOT, "build.ninja"), mode="w", encoding="utf-8"
+    ) as file:
         for build_dir in builds_dir_fragments:
             file.write(f"subninja {build_dir}/build.ninja\n")
         file.write("\n")
@@ -700,14 +798,22 @@ def build_with_driver_ninja_file(build_variants):
     subprocess.run(ninja_cmd, cwd=BUILD_ROOT, check=True)
     return
 
+
 def build_ctest_testfile(build_variants):
     """Write the main CTestTestfile.cmake that will be responsible for building the global test list for ctest"""
 
-    build_dir_fragments = [build_variant_to_build_dir_fragment(bv) for bv in build_variants]
+    build_dir_fragments = [
+        build_variant_to_build_dir_fragment(bv) for bv in build_variants
+    ]
 
-    with open(os.path.join(BUILD_ROOT, "CTestTestfile.cmake"), mode='w', encoding='utf-8') as file:
-        file.writelines('\n'.join([f'subdirs("{fragment}")' for fragment in build_dir_fragments]))
-        file.write('\n')
+    with open(
+        os.path.join(BUILD_ROOT, "CTestTestfile.cmake"), mode="w", encoding="utf-8"
+    ) as file:
+        file.writelines(
+            "\n".join([f'subdirs("{fragment}")' for fragment in build_dir_fragments])
+        )
+        file.write("\n")
+
 
 def run_tests():
     """Execute CTest on the generated CTestTestile.cmake"""
@@ -716,12 +822,12 @@ def run_tests():
 
     cmake_bin_dir = os.path.dirname(CMAKE_PATH)
     ctest_cmd = [
-        os.path.join(cmake_bin_dir, 'ctest'),
-        '--parallel',
-        '--output-on-failure',
-        '--no-tests=error',
-        '--stop-on-failure',
-        '--schedule-random',
+        os.path.join(cmake_bin_dir, "ctest"),
+        "--parallel",
+        "--output-on-failure",
+        "--no-tests=error",
+        "--stop-on-failure",
+        "--schedule-random",
     ]
 
     subprocess.run(ctest_cmd, cwd=BUILD_ROOT, check=True)
@@ -732,24 +838,30 @@ def setup_cmake():
 
     global CMAKE_PATH
     if CMAKE_PATH is None:
-        CMAKE_PATH = shutil.which('cmake')
+        CMAKE_PATH = shutil.which("cmake")
 
     if CMAKE_PATH is None:
-        raise ValueError("no valid CMake binary was specified. Add it to your PATH or via --cmake-path.")
+        raise ValueError(
+            "no valid CMake binary was specified. Add it to your PATH or via --cmake-path."
+        )
 
     print(f"using the cmake binary at: {CMAKE_PATH}")
+
 
 def setup_ninja():
     """Ensure the user has given us a path to Ninja or we can find it"""
 
     global NINJA_PATH
     if NINJA_PATH is None:
-        NINJA_PATH = shutil.which('ninja')
+        NINJA_PATH = shutil.which("ninja")
 
     if NINJA_PATH is None:
-        raise ValueError("no valid Ninja binary was specified. Add it to your PATH or via --ninja-path.")
+        raise ValueError(
+            "no valid Ninja binary was specified. Add it to your PATH or via --ninja-path."
+        )
 
     print(f"using the ninja binary at: {NINJA_PATH}")
+
 
 def init():
     """Main entry for bulk-building Boost via CMake"""
@@ -765,8 +877,9 @@ def init():
     build_with_driver_ninja_file(build_variants)
     build_ctest_testfile(build_variants)
 
-    if COMMAND_MODE == 'test':
+    if COMMAND_MODE == "test":
         run_tests()
+
 
 if __name__ == "__main__":
     init()
