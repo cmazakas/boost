@@ -11,6 +11,7 @@ import dataclasses
 import argparse
 import sys
 import pprint
+import itertools
 
 num_cores = os.cpu_count()
 
@@ -652,8 +653,9 @@ def parse_args():
         command = args.command
         if command not in ("build", "test"):
             raise ValueError(
-                "The only permitted sub-commands for " 'c2.py are: "build" or "test".'
+                'The only permitted sub-commands for c2.py are: "build" or "test".'
             )
+
         global COMMAND_MODE
         COMMAND_MODE = command
     else:
@@ -746,21 +748,28 @@ def parse_args():
         global CTESTFLAGS
         CTESTFLAGS = args.ctestflags
 
+    configs = {
+        "cxxstd": cxxstds,
+        "toolset": toolsets,
+        "variant": variants,
+        "address_model": address_models,
+        "link": links,
+    }
+
+    config_perms = list(itertools.product(*configs.values()))
+    build_dicts = [dict(zip(configs.keys(), values)) for values in config_perms]
+
     build_variants = []
-    for cxxstd in cxxstds:
-        for toolset in toolsets:
-            for variant in variants:
-                for addr in address_models:
-                    for link in links:
-                        build_variants.append(
-                            BuildVariant(
-                                toolset=toolset,
-                                variant=variant,
-                                cxxstd=cxxstd,
-                                address_model=addr,
-                                link=link,
-                            )
-                        )
+    for build_dict in build_dicts:
+        build_variant = BuildVariant(
+            cxxstd=build_dict["cxxstd"],
+            toolset=build_dict["toolset"],
+            variant=build_dict["variant"],
+            address_model=build_dict["address_model"],
+            link=build_dict["link"],
+        )
+
+        build_variants.append(build_variant)
 
     return build_variants
 
@@ -867,7 +876,11 @@ def init():
     """Main entry for bulk-building Boost via CMake"""
 
     print("starting c2.py script")
+
     build_variants = parse_args()
+
+    print("the build variants are:")
+    pprint.pprint(build_variants, width=256)
 
     setup_cmake()
     setup_ninja()
